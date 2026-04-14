@@ -1,5 +1,8 @@
 import { ReviewRecord } from "@/types";
-import { formatReviewDate } from "@/lib/hotel-display";
+
+function formatReviewDate(value: string) {
+  return value;
+}
 
 export function ReviewCard({ review }: { review: ReviewRecord }) {
   return (

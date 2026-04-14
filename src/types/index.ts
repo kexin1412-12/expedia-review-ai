@@ -12,12 +12,6 @@ export interface HotelRecord {
   reviewCount: number;
 }
 
-export interface HotelImage {
-  src: string;
-  alt: string;
-  label: string;
-}
-
 export interface ReviewRecord {
   id: string;
   date: string;
@@ -37,11 +31,4 @@ export interface FollowUpResponse {
 export interface HotelSummaryResponse {
   summary: string;
   highlights: string[];
-  pros?: string[];
-  cons?: string[];
-  sentiment?: {
-    positive: string[];
-    mixed: string[];
-    negative: string[];
-  };
 }
