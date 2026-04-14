@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, CheckCircle2, MapPin, Mic, Send, Sparkles, Star } from "lucide-react";
 import { FollowUpResponse, HotelRecord, HotelSummaryResponse, ReviewRecord } from "@/types";
-import { hotelGradient, hotelSubtitle, initials } from "@/lib/hotel-display";
+import { getHotelImage, hotelGradient, hotelSubtitle, initials } from "@/lib/hotel-display";
 import { ReviewCard } from "@/components/review-card";
 import { SiteHeader } from "@/components/site-header";
 
@@ -110,10 +110,13 @@ export function HotelDetailClient({ hotel }: { hotel: HotelRecord }) {
         <section className="mt-6 grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
           <div className="rounded-[30px] border border-slate-200 bg-white p-8 shadow-card">
             <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
-              <div className={`rounded-[26px] bg-gradient-to-br ${hotelGradient(2)} p-6 text-white`}>
-                <div className="rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide">Selected hotel</div>
-                <div className="mt-8 text-6xl font-bold">{initials(hotel)}</div>
-                <div className="mt-2 text-lg opacity-90">{hotelSubtitle(hotel)}</div>
+              <div className={`relative overflow-hidden rounded-[26px] bg-gradient-to-br ${hotelGradient(2)} p-6 text-white`}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={getHotelImage(hotel)} alt={hotel.name} className="absolute inset-0 h-full w-full object-cover" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-black/15" />
+                <div className="relative rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide">Selected hotel</div>
+                <div className="relative mt-8 text-6xl font-bold">{initials(hotel)}</div>
+                <div className="relative mt-2 text-lg opacity-90">{hotelSubtitle(hotel)}</div>
               </div>
               <div>
                 <h1 className="text-4xl font-bold text-[#0b1638]">{hotel.name}</h1>
