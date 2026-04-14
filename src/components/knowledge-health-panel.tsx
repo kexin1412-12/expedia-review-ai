@@ -210,9 +210,7 @@ export function KnowledgeHealthPanel({ hotelId }: { hotelId: string }) {
         </div>
       )}
 
-      <p className="mt-6 text-[11px] text-slate-400">
-        Generated at {new Date(data.generatedAt).toLocaleString()}
-      </p>
+
     </div>
   );
 }

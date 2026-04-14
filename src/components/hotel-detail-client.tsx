@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, CheckCircle2, MapPin, Mic, Send, Sparkles, Star } from "lucide-react";
+import { ArrowLeft, CheckCircle2, MapPin, Mic, Send, Sparkles, Star, Wifi, Car, UtensilsCrossed, Dumbbell, Shield, Clock, Globe } from "lucide-react";
 import { FollowUpResponse, HotelRecord, HotelSummaryResponse, ReviewRecord } from "@/types";
-import { getHotelImage, hotelGradient, hotelSubtitle, initials } from "@/lib/hotel-display";
+import { getHotelImage, getHotelGallery, hotelSubtitle, getAmenityIcon, ratingLabel } from "@/lib/hotel-display";
 import { ReviewCard } from "@/components/review-card";
 import { SiteHeader } from "@/components/site-header";
 import { KnowledgeHealthPanel } from "@/components/knowledge-health-panel";
@@ -109,35 +109,89 @@ export function HotelDetailClient({ hotel }: { hotel: HotelRecord }) {
         </Link>
 
         <section className="mt-6 grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="rounded-[30px] border border-slate-200 bg-white p-8 shadow-card">
-            <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
-              <div className={`relative overflow-hidden rounded-[26px] bg-gradient-to-br ${hotelGradient(2)} p-6 text-white`}>
+          {/* ── Left: Hotel hero + info ── */}
+          <div className="space-y-6">
+            {/* Image gallery */}
+            <div className="grid grid-cols-4 grid-rows-2 gap-2 overflow-hidden rounded-[26px]" style={{ height: 380 }}>
+              <div className="relative col-span-2 row-span-2">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={getHotelImage(hotel)} alt={hotel.name} className="absolute inset-0 h-full w-full object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-black/15" />
-                <div className="relative rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide">Selected hotel</div>
-                <div className="relative mt-8 text-6xl font-bold">{initials(hotel)}</div>
-                <div className="relative mt-2 text-lg opacity-90">{hotelSubtitle(hotel)}</div>
-              </div>
-              <div>
-                <h1 className="text-4xl font-bold text-[#0b1638]">{hotel.name}</h1>
-                <div className="mt-3 flex items-center gap-2 text-slate-600">
-                  <MapPin className="h-4 w-4" />
-                  {hotelSubtitle(hotel)}
-                </div>
-                <div className="mt-4 flex items-center gap-3">
-                  <span className="rounded-md bg-emerald-700 px-3 py-1.5 text-sm font-bold text-white">{(hotel.rating ?? 8).toFixed(1)}</span>
-                  <span className="text-sm text-slate-600">{hotel.reviewCount} guest comments</span>
-                </div>
-                <p className="mt-5 text-[15px] leading-7 text-slate-700">{hotel.description}</p>
-                <div className="mt-5 flex flex-wrap gap-2">
-                  {hotel.amenities.map((amenity) => (
-                    <span key={amenity} className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700">
-                      {amenity}
-                    </span>
-                  ))}
+                <img src={getHotelImage(hotel)} alt={hotel.name} className="h-full w-full object-cover" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                <div className="absolute bottom-5 left-5">
+                  {hotel.starRating && (
+                    <div className="mb-2 flex items-center gap-0.5">
+                      {Array.from({ length: Math.round(hotel.starRating) }).map((_, i) => (
+                        <Star key={i} className="h-4 w-4 fill-amber-400 text-amber-400" />
+                      ))}
+                      <span className="ml-1.5 text-sm font-semibold text-white/90">{hotel.starRating}-star hotel</span>
+                    </div>
+                  )}
+                  <h1 className="text-3xl font-bold text-white drop-shadow-lg">{hotel.name}</h1>
+                  <div className="mt-1.5 flex items-center gap-1.5 text-white/90">
+                    <MapPin className="h-3.5 w-3.5" />
+                    <span className="text-sm">{hotelSubtitle(hotel)}</span>
+                  </div>
                 </div>
               </div>
+              {getHotelGallery(hotel).map((src, i) => (
+                <div key={i} className="relative overflow-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={src} alt={`${hotel.name} photo ${i + 2}`} className="h-full w-full object-cover transition hover:scale-105" />
+                </div>
+              ))}
+            </div>
+
+            {/* Quick stats bar */}
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5">
+                <span className="text-xl font-bold text-white">{(hotel.rating ?? 8).toFixed(1)}</span>
+                <div className="border-l border-white/30 pl-2">
+                  <div className="text-sm font-semibold text-white">{ratingLabel(hotel.rating)}</div>
+                  <div className="text-[11px] text-emerald-100">{hotel.reviewCount} reviews</div>
+                </div>
+              </div>
+              {hotel.amenities.slice(0, 6).map((amenity) => (
+                <span key={amenity} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-700 shadow-sm">
+                  <span className="text-base">{getAmenityIcon(amenity)}</span>
+                  {amenity}
+                </span>
+              ))}
+              {hotel.amenities.length > 6 && (
+                <span className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-medium text-expediaBlue shadow-sm">
+                  +{hotel.amenities.length - 6} more
+                </span>
+              )}
+            </div>
+
+            {/* Property info card */}
+            <div className="rounded-[26px] border border-slate-200 bg-white p-7 shadow-card">
+              <h2 className="text-xl font-bold text-[#0b1638]">About this property</h2>
+              <p className="mt-4 text-[15px] leading-7 text-slate-600">{hotel.description}</p>
+
+              {hotel.areaDescription && (
+                <div className="mt-6 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 p-5">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-expediaBlue">
+                    <Globe className="h-4 w-4" />
+                    Explore the area
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">{hotel.areaDescription}</p>
+                </div>
+              )}
+
+              {/* All amenities grid */}
+              {hotel.amenities.length > 6 && (
+                <div className="mt-6">
+                  <h3 className="text-sm font-semibold text-slate-800">All amenities</h3>
+                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {hotel.amenities.map((amenity) => (
+                      <div key={amenity} className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                        <span>{getAmenityIcon(amenity)}</span>
+                        {amenity}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
