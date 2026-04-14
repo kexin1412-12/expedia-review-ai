@@ -374,6 +374,11 @@ export function ReviewIntelligenceModal({ hotel, reviews, onClose }: {
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [health, setHealth] = useState<KnowledgeHealthResponse | null>(null);
   const [healthLoading, setHealthLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
+
+  // Reset page when search/sort changes
+  useEffect(() => { setPage(1); }, [search, sort]);
 
   // Load knowledge health data
   useEffect(() => {
@@ -656,13 +661,29 @@ export function ReviewIntelligenceModal({ hotel, reviews, onClose }: {
                   No reviews match your search.
                 </div>
               ) : (
-                filteredReviews.slice(0, 30).map((review) => (
+                filteredReviews.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((review) => (
                   <ModalReviewCard key={review.id} review={review} />
                 ))
               )}
-              {filteredReviews.length > 30 && (
-                <div className="py-6 text-center text-sm text-slate-400">
-                  Showing 30 of {filteredReviews.length} reviews
+              {filteredReviews.length > PAGE_SIZE && (
+                <div className="flex items-center justify-center gap-4 py-6">
+                  <button
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-sm text-slate-500">
+                    Page {page} of {Math.ceil(filteredReviews.length / PAGE_SIZE)} ({filteredReviews.length} reviews)
+                  </span>
+                  <button
+                    onClick={() => setPage((p) => Math.min(Math.ceil(filteredReviews.length / PAGE_SIZE), p + 1))}
+                    disabled={page >= Math.ceil(filteredReviews.length / PAGE_SIZE)}
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
                 </div>
               )}
             </div>
@@ -686,6 +707,11 @@ export function ReviewIntelligencePanel({ hotel, reviews }: {
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [health, setHealth] = useState<KnowledgeHealthResponse | null>(null);
   const [healthLoading, setHealthLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
+
+  // Reset page when search/sort changes
+  useEffect(() => { setPage(1); }, [search, sort]);
 
   useEffect(() => {
     let cancelled = false;
@@ -884,10 +910,28 @@ export function ReviewIntelligencePanel({ hotel, reviews }: {
             {filteredReviews.length === 0 ? (
               <div className="flex h-40 items-center justify-center text-sm text-slate-400">No reviews match your search.</div>
             ) : (
-              filteredReviews.slice(0, 30).map((review) => <ModalReviewCard key={review.id} review={review} />)
+              filteredReviews.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((review) => <ModalReviewCard key={review.id} review={review} />)
             )}
-            {filteredReviews.length > 30 && (
-              <div className="py-6 text-center text-sm text-slate-400">Showing 30 of {filteredReviews.length} reviews</div>
+            {filteredReviews.length > PAGE_SIZE && (
+              <div className="flex items-center justify-center gap-4 py-6">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                <span className="text-sm text-slate-500">
+                  Page {page} of {Math.ceil(filteredReviews.length / PAGE_SIZE)} ({filteredReviews.length} reviews)
+                </span>
+                <button
+                  onClick={() => setPage((p) => Math.min(Math.ceil(filteredReviews.length / PAGE_SIZE), p + 1))}
+                  disabled={page >= Math.ceil(filteredReviews.length / PAGE_SIZE)}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
+              </div>
             )}
           </div>
         </div>
