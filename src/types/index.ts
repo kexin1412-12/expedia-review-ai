@@ -35,37 +35,64 @@ export interface HotelSummaryResponse {
 
 /* ───── Property Knowledge Health ───── */
 
-export type CoverageStatus =
-  | "WELL COVERED"
-  | "MEDIUM COVERAGE"
-  | "LOW RECENT COVERAGE"
-  | "STALE"
-  | "UNCERTAIN";
+export type HealthStatus =
+  | "strong_signal"
+  | "stable"
+  | "fading"
+  | "risk"
+  | "unknown";
 
-export type TrendDirection = "improving" | "stable" | "declining" | "unknown";
+export type TrendDirection = "up" | "down" | "stable";
+
+export type DimensionKey =
+  | "cleanliness"
+  | "service"
+  | "check_in"
+  | "breakfast"
+  | "pool"
+  | "parking"
+  | "noise"
+  | "wifi";
 
 export interface TimelineEntry {
-  month: string;          // e.g. "2023-02"
-  mentionCount: number;
-  avgScore: number | null; // null when no structured score
+  bucket: string;
+  mentions: number;
+  negativeMentions: number;
 }
 
 export interface DimensionHealth {
-  dimension: string;       // e.g. "Cleanliness"
-  coverage: CoverageStatus;
+  dimension: DimensionKey;
+  label: string;
+  status: HealthStatus;
   trend: TrendDirection;
+  confidence: number;         // 0-1
+  score: number;              // priority score for gap detection
+  totalMentions: number;
+  recentMentions30d: number;
+  staleDays: number | null;
+  avgRating: number | null;
   timeline: TimelineEntry[];
-  questionCandidates: string[];
+  propertyHasOfficialInfo: boolean;
+  propertyFieldCoverage: string[];
   summary: string;
-  mentionCount: number;
-  recentMentionCount: number;
-  avgScore: number | null;
+  refreshReason: string;
+  questionCandidates: string[];
+}
+
+export interface SuggestedQuestion {
+  dimension: DimensionKey;
+  question: string;
+  why: string;
+  answerType: "text" | "yes_no" | "choice";
+  priority: number;
 }
 
 export interface KnowledgeHealthResponse {
   hotelId: string;
   dimensions: DimensionHealth[];
-  dynamicFollowUps: FollowUpResponse[];
-  overallScore: number;   // 0-100
-  generatedAt: string;    // ISO timestamp
+  suggestedQuestions: SuggestedQuestion[];
+  aiSummary: string;
+  overallScore: number;       // 0-100
+  reviewCount: number;
+  generatedAt: string;
 }

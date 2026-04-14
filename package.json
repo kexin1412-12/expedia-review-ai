@@ -9,6 +9,8 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "bing-translate-api": "^4.2.0",
+    "google-translate-api-x": "^10.7.2",
     "lucide-react": "^0.468.0",
     "next": "15.0.0",
     "openai": "^4.104.0",

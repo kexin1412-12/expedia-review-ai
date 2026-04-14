@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { HotelRecord, ReviewRecord, FollowUpResponse } from "@/types";
+import { HotelRecord, ReviewRecord, FollowUpResponse, DimensionHealth, SuggestedQuestion, DimensionKey } from "@/types";
 
 function getClient() {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -109,94 +109,117 @@ Return valid JSON only in this format:
 }
 
 /* ────────────────────────────────────────
-   Knowledge Health – dynamic follow-ups
+   Knowledge Health – AI refinement
    ──────────────────────────────────────── */
 
-export interface GapSignal {
-  dimension: string;
-  coverage: string;
-  mentionCount: number;
-  recentMentionCount: number;
-  avgScore: number | null;
+const DIMENSION_KEYS: DimensionKey[] = [
+  "cleanliness", "service", "check_in", "breakfast",
+  "pool", "parking", "noise", "wifi",
+];
+
+interface RefineHealthInput {
+  hotel: HotelRecord;
+  reviews: ReviewRecord[];
+  cards: DimensionHealth[];
+  fallbackQuestions: SuggestedQuestion[];
+  maxQuestions: number;
 }
 
-interface HealthAIResult {
-  followUps: FollowUpResponse[];
-  dimensionQuestions: { dimension: string; questions: string[] }[];
+interface RefineHealthResult {
+  questions: SuggestedQuestion[];
+  aiSummary: string;
 }
 
-export async function generateHealthFollowUps(
-  hotel: HotelRecord,
-  reviews: ReviewRecord[],
-  gapSignals: GapSignal[],
-): Promise<HealthAIResult> {
+export async function refineHealthWithAI(params: RefineHealthInput): Promise<RefineHealthResult> {
+  const { hotel, reviews, cards, fallbackQuestions, maxQuestions } = params;
   const client = getClient();
-  const sampleReviews = reviews
-    .slice(0, 20)
-    .map((r) => r.text)
-    .filter(Boolean);
 
-  const fallbackResult: HealthAIResult = {
-    followUps: gapSignals.slice(0, 2).map((g) => ({
-      topic: g.dimension,
-      question: `How was the ${g.dimension.toLowerCase()} during your stay?`,
-      rationale: `${g.dimension} has ${g.coverage.toLowerCase()} in recent reviews.`,
-      quickReplies: ["Great", "Good", "Fair", "Poor"],
-    })),
-    dimensionQuestions: gapSignals.map((g) => ({
-      dimension: g.dimension,
-      questions: [`How was the ${g.dimension.toLowerCase()}?`],
-    })),
+  const fallbackResult: RefineHealthResult = {
+    questions: fallbackQuestions,
+    aiSummary: "AI refinement skipped because OPENAI_API_KEY is not configured.",
   };
 
-  if (!client || sampleReviews.length === 0) {
-    return fallbackResult;
-  }
+  if (!client) return fallbackResult;
 
-  const prompt = `You are an Expedia product analyst identifying knowledge gaps in hotel reviews.
+  const condensedReviews = reviews.slice(0, 40).map((r) => ({
+    date: r.date,
+    title: (r.title ?? "").slice(0, 120),
+    text: (r.text ?? "").slice(0, 280),
+  }));
 
-Context:
-- Property: ${hotel.name} in ${hotel.city ?? "unknown city"}
-- Description: ${hotel.description}
-- Amenities: ${hotel.amenities.join(", ")}
-
-Gap signals detected (dimensions needing more coverage):
-${JSON.stringify(gapSignals, null, 2)}
-
-Sample recent reviews:
-${sampleReviews.join("\n---\n")}
-
-Tasks:
-1. Generate 1-2 dynamic follow-up questions targeting the most important gaps. Each should be low-friction and easy for a guest to answer.
-2. For each gap dimension, suggest 1-2 specific question candidates that could be asked.
-
-Return valid JSON only in this format:
-{
-  "followUps": [
-    {
-      "topic": "dimension label",
-      "question": "short question text",
-      "rationale": "one sentence rationale",
-      "quickReplies": ["option1", "option2", "option3", "option4"]
-    }
-  ],
-  "dimensionQuestions": [
-    {
-      "dimension": "exact dimension label from input",
-      "questions": ["question 1", "question 2"]
-    }
-  ]
-}`;
+  const promptPayload = {
+    property: {
+      id: hotel.id,
+      name: hotel.name,
+      city: hotel.city,
+      province: hotel.province,
+      country: hotel.country,
+      starRating: hotel.starRating,
+      description: hotel.description.slice(0, 500),
+      areaDescription: hotel.areaDescription.slice(0, 300),
+      amenities: hotel.amenities,
+    },
+    healthCards: cards,
+    fallbackQuestions,
+    recentReviews: condensedReviews,
+    task: {
+      goal: "Select the best 1-2 low-friction follow-up questions that fill missing or stale property information.",
+      constraints: [
+        "Ask at most the requested number of questions.",
+        "Prefer dimensions that are stale, unknown, risky, or important for future travelers.",
+        "Keep questions conversational, specific, and easy to answer.",
+      ],
+      maxQuestions,
+    },
+  };
 
   try {
     const response = await client.responses.create({
       model: "gpt-4.1-mini",
-      input: prompt,
+      input: [
+        {
+          role: "system",
+          content: "You are an Expedia review intelligence assistant. Choose the best follow-up questions to refresh missing or outdated property knowledge. Return only structured JSON.",
+        },
+        {
+          role: "user",
+          content: JSON.stringify(promptPayload),
+        },
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "review_gap_questions",
+          strict: true,
+          schema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              aiSummary: { type: "string" },
+              questions: {
+                type: "array",
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    dimension: { type: "string", enum: DIMENSION_KEYS },
+                    question: { type: "string" },
+                    why: { type: "string" },
+                    answerType: { type: "string", enum: ["text", "yes_no", "choice"] },
+                    priority: { type: "number" },
+                  },
+                  required: ["dimension", "question", "why", "answerType", "priority"],
+                },
+              },
+            },
+            required: ["aiSummary", "questions"],
+          },
+        },
+      },
     });
-    const parsed = JSON.parse(response.output_text);
-    if (!Array.isArray(parsed.followUps) || !Array.isArray(parsed.dimensionQuestions)) {
-      return fallbackResult;
-    }
+
+    const parsed = JSON.parse(response.output_text) as RefineHealthResult;
+    if (!Array.isArray(parsed.questions)) return fallbackResult;
     return parsed;
   } catch {
     return fallbackResult;
