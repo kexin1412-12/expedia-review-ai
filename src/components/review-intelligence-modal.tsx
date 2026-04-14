@@ -192,9 +192,9 @@ function ModalReviewCard({ review }: { review: ReviewRecord }) {
       <div className="flex items-start gap-3">
         {overall !== null && (
           <div className="flex items-baseline gap-0.5 text-lg font-bold text-slate-800">
-            {overall.toFixed(0)}<span className="text-sm font-medium text-slate-400">/10</span>
+            {overall.toFixed(1)}<span className="text-sm font-medium text-slate-400">/5</span>
             <span className="ml-2 text-base font-semibold text-slate-700">
-              {overall >= 9 ? "Excellent" : overall >= 8 ? "Very Good" : overall >= 7 ? "Good" : overall >= 6 ? "Okay" : ""}
+              {overall >= 4.5 ? "Excellent" : overall >= 4 ? "Very Good" : overall >= 3.5 ? "Good" : overall >= 3 ? "Okay" : ""}
             </span>
           </div>
         )}
@@ -372,7 +372,6 @@ export function ReviewIntelligenceModal({ hotel, reviews, onClose }: {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortOption>("relevant");
   const [showSortMenu, setShowSortMenu] = useState(false);
-  const [factTab, setFactTab] = useState<PropertyFactTab>("overview");
   const [health, setHealth] = useState<KnowledgeHealthResponse | null>(null);
   const [healthLoading, setHealthLoading] = useState(true);
 
@@ -577,14 +576,6 @@ export function ReviewIntelligenceModal({ hotel, reviews, onClose }: {
               </div>
             )}
 
-            {/* Property facts tabs */}
-            <div className="mt-7">
-              <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800">
-                <ShieldCheck className="h-4 w-4 text-expediaBlue" />
-                Property Facts
-              </h3>
-              <PropertyFactsTabs hotel={hotel} activeTab={factTab} setActiveTab={setFactTab} />
-            </div>
           </aside>
 
           {/* ═══════════ RIGHT CONTENT ═══════════ */}
@@ -675,6 +666,229 @@ export function ReviewIntelligenceModal({ hotel, reviews, onClose }: {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   Inline Panel (embedded in page)
+   ═══════════════════════════════════════════ */
+
+export function ReviewIntelligencePanel({ hotel, reviews }: {
+  hotel: HotelRecord;
+  reviews: ReviewRecord[];
+}) {
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<SortOption>("relevant");
+  const [showSortMenu, setShowSortMenu] = useState(false);
+  const [health, setHealth] = useState<KnowledgeHealthResponse | null>(null);
+  const [healthLoading, setHealthLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setHealthLoading(true);
+    fetch(`/api/hotels/${hotel.id}/knowledge-health`)
+      .then((res) => res.ok ? res.json() : null)
+      .then((json) => { if (!cancelled) setHealth(json); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setHealthLoading(false); });
+    return () => { cancelled = true; };
+  }, [hotel.id]);
+
+  const dimScores = useMemo(() => aggregateDimensionScores(reviews), [reviews]);
+
+  const coreDimensions = useMemo(() => {
+    return CORE_DIMENSIONS.map((key) => {
+      const score = dimScores[key];
+      const khDim = health?.dimensions.find(
+        (d) => d.dimension.toLowerCase().includes(key.replace(/score$/, "")) || d.label.toLowerCase().includes((RATING_LABELS[key] ?? "").toLowerCase()),
+      );
+      return {
+        key,
+        label: RATING_LABELS[key] ?? key,
+        score: score ? score.avg : (khDim?.avgRating ?? 0),
+        count: score ? score.count : (khDim?.totalMentions ?? 0),
+        trend: khDim?.trend as TrendDirection | undefined,
+      };
+    });
+  }, [dimScores, health]);
+
+  const overallAvg = useMemo(() => {
+    const withScores = coreDimensions.filter((d) => d.score > 0);
+    if (withScores.length === 0) return hotel.rating ?? 0;
+    return +(withScores.reduce((a, b) => a + b.score, 0) / withScores.length).toFixed(1);
+  }, [coreDimensions, hotel.rating]);
+
+  const guestLiked = useMemo(() => {
+    if (!health) return [];
+    return health.dimensions.filter((d) => d.status === "strong_signal" || d.status === "stable").slice(0, 3).map((d) => d.summary);
+  }, [health]);
+
+  const needsConfirm = useMemo(() => {
+    if (!health) return [];
+    return health.dimensions.filter((d) => d.status === "fading" || d.status === "risk").slice(0, 3).map((d) => `${d.label}: ${d.refreshReason}`);
+  }, [health]);
+
+  const suggestedQs = useMemo(() => {
+    if (!health) return [];
+    return health.suggestedQuestions.slice(0, 3).map((q) => q.question);
+  }, [health]);
+
+  const gapDimensions = useMemo(() => health?.dimensions.slice(0, 7) ?? [], [health]);
+
+  const filteredReviews = useMemo(() => {
+    let result = [...reviews];
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter((r) => (r.title ?? "").toLowerCase().includes(q) || r.text.toLowerCase().includes(q));
+    }
+    switch (sort) {
+      case "newest": result.sort((a, b) => b.date.localeCompare(a.date)); break;
+      case "highest": { const sc = (r: ReviewRecord) => parseRatings(r.ratingRaw).overall ?? 0; result.sort((a, b) => sc(b) - sc(a)); break; }
+      case "lowest": { const sc = (r: ReviewRecord) => parseRatings(r.ratingRaw).overall ?? 0; result.sort((a, b) => sc(a) - sc(b)); break; }
+    }
+    return result;
+  }, [reviews, search, sort]);
+
+  const sortLabels: Record<SortOption, string> = {
+    relevant: "Most relevant",
+    newest: "Newest first",
+    highest: "Highest rated",
+    lowest: "Lowest rated",
+  };
+
+  return (
+    <div className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-card">
+      {/* Header */}
+      <div className="border-b border-slate-100 px-8 py-6">
+        <h2 className="text-2xl font-bold text-slate-900">Guest Reviews & Property Intelligence</h2>
+        <p className="mt-1 text-sm text-slate-500">AI-powered analysis across {reviews.length} verified reviews</p>
+      </div>
+
+      {/* AI insight strip */}
+      <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50/60 to-white px-8 py-5">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <InsightCard icon={<ThumbsUp className="h-4 w-4 text-emerald-600" />} title="What guests liked" items={guestLiked} />
+          <InsightCard icon={<Clock className="h-4 w-4 text-amber-500" />} title="Needs recent confirmation" items={needsConfirm} />
+          <InsightCard icon={<MessageCircle className="h-4 w-4 text-expediaBlue" />} title="Suggested follow-ups" items={suggestedQs} />
+        </div>
+      </div>
+
+      {/* 2-column body */}
+      <div className="flex">
+        {/* ── Left sidebar ── */}
+        <aside className="w-[360px] shrink-0 border-r border-slate-100 bg-slate-50/40 px-7 py-6">
+          {/* Score */}
+          <div className="flex items-center gap-5">
+            <div className="flex h-[68px] w-[68px] items-center justify-center rounded-2xl bg-emerald-700">
+              <span className="text-2xl font-bold text-white">{(hotel.rating ?? overallAvg).toFixed(1)}</span>
+            </div>
+            <div>
+              <div className="text-lg font-bold text-slate-900">{ratingLabel(hotel.rating)}</div>
+              <div className="mt-0.5 text-sm text-slate-500">{reviews.length} verified reviews</div>
+            </div>
+          </div>
+
+          {/* AI summary */}
+          {health?.aiSummary && (
+            <div className="mt-6 rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-4">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-expediaBlue">
+                <Sparkles className="h-3.5 w-3.5" /> AI Summary
+              </div>
+              <p className="mt-2 text-sm leading-6 text-slate-600">{health.aiSummary}</p>
+              <div className="mt-2 flex items-center gap-1 text-[10px] text-slate-400">
+                <Sparkles className="h-2.5 w-2.5" /> From real guest reviews summarized by AI.
+              </div>
+            </div>
+          )}
+
+          {/* Core dimensions */}
+          <div className="mt-7">
+            <h3 className="text-sm font-bold text-slate-800">Review Dimensions</h3>
+            <div className="mt-3 divide-y divide-slate-100">
+              {coreDimensions.map((d) => (
+                <DimensionRow key={d.key} name={d.label} score={d.score} count={d.count} trend={d.trend} />
+              ))}
+            </div>
+          </div>
+
+          {/* Knowledge coverage */}
+          {gapDimensions.length > 0 && (
+            <div className="mt-7">
+              <h3 className="flex items-center gap-2 text-sm font-bold text-slate-800">
+                <AlertCircle className="h-4 w-4 text-amber-500" /> Knowledge Coverage
+              </h3>
+              <p className="mt-1 text-xs text-slate-400">AI-assessed freshness of key topics</p>
+              <div className="mt-3 space-y-2">
+                {gapDimensions.map((dim) => <TopicChip key={dim.dimension} dim={dim} />)}
+              </div>
+            </div>
+          )}
+
+          {healthLoading && (
+            <div className="mt-6 flex items-center gap-2 text-xs text-slate-400">
+              <TrendingUp className="h-4 w-4 animate-pulse" /> Analyzing coverage...
+            </div>
+          )}
+
+        </aside>
+
+        {/* ── Right: review feed ── */}
+        <div className="flex flex-1 flex-col">
+          {/* Search + sort */}
+          <div className="flex items-center justify-between border-b border-slate-100 px-7 py-4">
+            <div className="flex items-center gap-3">
+              <h3 className="text-lg font-bold text-slate-800">All Reviews</h3>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">{filteredReviews.length}</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search reviews..."
+                  className="h-9 w-56 rounded-full border border-slate-200 bg-white pl-9 pr-4 text-sm text-slate-700 outline-none transition focus:border-expediaBlue focus:ring-1 focus:ring-expediaBlue/20"
+                />
+              </div>
+              <div className="relative">
+                <button
+                  onClick={() => setShowSortMenu(!showSortMenu)}
+                  className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 transition hover:border-slate-300"
+                >
+                  Sort by <span className="font-semibold text-expediaBlue">{sortLabels[sort]}</span>
+                  <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+                </button>
+                {showSortMenu && (
+                  <div className="absolute right-0 top-full z-10 mt-1 w-44 rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                    {(Object.entries(sortLabels) as [SortOption, string][]).map(([key, label]) => (
+                      <button
+                        key={key}
+                        onClick={() => { setSort(key); setShowSortMenu(false); }}
+                        className={`block w-full px-4 py-2 text-left text-sm transition hover:bg-slate-50 ${sort === key ? "font-semibold text-expediaBlue" : "text-slate-600"}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Review list */}
+          <div className="max-h-[900px] overflow-y-auto px-7">
+            {filteredReviews.length === 0 ? (
+              <div className="flex h-40 items-center justify-center text-sm text-slate-400">No reviews match your search.</div>
+            ) : (
+              filteredReviews.slice(0, 30).map((review) => <ModalReviewCard key={review.id} review={review} />)
+            )}
+            {filteredReviews.length > 30 && (
+              <div className="py-6 text-center text-sm text-slate-400">Showing 30 of {filteredReviews.length} reviews</div>
+            )}
           </div>
         </div>
       </div>

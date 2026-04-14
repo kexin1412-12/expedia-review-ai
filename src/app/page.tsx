@@ -108,7 +108,7 @@ export default function HomePage() {
           </div>
 
           <div className="grid gap-6 lg:grid-cols-4">
-            {hotels.slice(0, 8).map((hotel, index) => {
+            {hotels.map((hotel, index) => {
               const pricing = currencyFromRating(hotel.rating);
 
               return (
