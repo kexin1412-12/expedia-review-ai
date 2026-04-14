@@ -2,16 +2,21 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, MapPin, Mic, Send, Sparkles, Star, Clock, Globe, ChevronDown, ShieldCheck, PawPrint, Baby, AlertTriangle } from "lucide-react";
+import {
+  ArrowLeft, MapPin, Mic, Send, Sparkles, Star, Clock, Globe,
+  ChevronDown, ChevronRight, ShieldCheck, PawPrint, Baby, AlertTriangle,
+  Trophy, ThumbsUp, Coffee, Compass, Wifi, Car, Utensils, Dumbbell, Snowflake, Bus,
+} from "lucide-react";
 import { FollowUpResponse, HotelRecord, ReviewRecord, AmenityCategories } from "@/types";
 import { getHotelImage, getHotelGallery, hotelSubtitle, getAmenityIcon, ratingLabel } from "@/lib/hotel-display";
 import { ReviewCard } from "@/components/review-card";
 import { SiteHeader } from "@/components/site-header";
 import { KnowledgeHealthPanel } from "@/components/knowledge-health-panel";
+import { ReviewIntelligenceModal } from "@/components/review-intelligence-modal";
 
 const fallbackReview = "The room was very clean and the staff were friendly. Check-in was smooth.";
 
-/* ── Amenity category UI labels ── */
+/* ── Amenity category UI config ── */
 const AMENITY_CATEGORY_LABELS: Record<keyof AmenityCategories, string> = {
   accessibility: "Accessibility",
   activitiesNearby: "Nearby Activities",
@@ -30,33 +35,90 @@ const AMENITY_CATEGORY_LABELS: Record<keyof AmenityCategories, string> = {
 };
 
 const CATEGORY_ICONS: Record<keyof AmenityCategories, string> = {
-  accessibility: "♿",
-  activitiesNearby: "🎯",
-  businessServices: "💼",
-  conveniences: "🔧",
-  familyFriendly: "👨‍👩‍👧",
-  foodAndDrink: "🍽️",
-  guestServices: "🛎️",
-  internet: "📶",
-  langsSpoken: "🗣️",
-  more: "➕",
-  outdoor: "🌿",
-  parking: "🅿️",
-  spa: "💆",
-  thingsToDo: "🎉",
+  accessibility: "♿", activitiesNearby: "🎯", businessServices: "💼",
+  conveniences: "🔧", familyFriendly: "👨‍👩‍👧", foodAndDrink: "🍽️",
+  guestServices: "🛎️", internet: "📶", langsSpoken: "🗣️", more: "➕",
+  outdoor: "🌿", parking: "🅿️", spa: "💆", thingsToDo: "🎉",
 };
 
-/* ── Accordion section component ── */
+/* ── Popular amenity → Lucide icon mapping ── */
+const POPULAR_AMENITY_ICONS: Record<string, React.ReactNode> = {
+  "Breakfast Included": <Coffee className="h-5 w-5" />,
+  "Breakfast Available": <Coffee className="h-5 w-5" />,
+  "Internet": <Wifi className="h-5 w-5" />,
+  "Free Parking": <Car className="h-5 w-5" />,
+  "Restaurant": <Utensils className="h-5 w-5" />,
+  "Pool": <Compass className="h-5 w-5" />,
+  "Fitness Equipment": <Dumbbell className="h-5 w-5" />,
+  "Ac": <Snowflake className="h-5 w-5" />,
+  "Spa": <Compass className="h-5 w-5" />,
+  "Bar": <Coffee className="h-5 w-5" />,
+  "Laundry": <Compass className="h-5 w-5" />,
+  "Frontdesk 24 Hour": <Clock className="h-5 w-5" />,
+  "No Smoking": <ShieldCheck className="h-5 w-5" />,
+  "Housekeeping": <ShieldCheck className="h-5 w-5" />,
+  "Outdoor Space": <Globe className="h-5 w-5" />,
+  "Tv": <Compass className="h-5 w-5" />,
+  "Airport Shuttle": <Bus className="h-5 w-5" />,
+};
+
+function getPopularIcon(amenity: string) {
+  return POPULAR_AMENITY_ICONS[amenity] ?? <Compass className="h-5 w-5" />;
+}
+
+/* ── Generate highlights from hotel data ── */
+function generateHighlights(hotel: HotelRecord, reviewCount: number) {
+  const highlights: { icon: React.ReactNode; title: string; description: string }[] = [];
+
+  if (hotel.rating && hotel.rating >= 8.5) {
+    highlights.push({
+      icon: <Trophy className="h-6 w-6 text-expediaBlue" />,
+      title: "Highly rated",
+      description: `Guests love this property — rated ${hotel.rating.toFixed(1)} based on ${reviewCount} reviews.`,
+    });
+  }
+
+  const food = hotel.amenityCategories?.foodAndDrink ?? [];
+  const hasBreakfast = food.some(f => /breakfast/i.test(f));
+  if (hasBreakfast) {
+    const freeBreakfast = food.some(f => /free.*breakfast/i.test(f));
+    highlights.push({
+      icon: <Coffee className="h-6 w-6 text-expediaBlue" />,
+      title: freeBreakfast ? "Free breakfast" : "Breakfast available",
+      description: freeBreakfast
+        ? "Start your morning with a complimentary breakfast."
+        : "Breakfast is available on-site for guests.",
+    });
+  }
+
+  const parking = hotel.amenityCategories?.parking ?? [];
+  if (parking.length > 0) {
+    const freeParking = parking.some(p => /free.*parking|free.*self/i.test(p));
+    if (freeParking) {
+      highlights.push({
+        icon: <Car className="h-6 w-6 text-expediaBlue" />,
+        title: "Free parking",
+        description: "Self-parking is included at no extra charge.",
+      });
+    }
+  }
+
+  highlights.push({
+    icon: <ThumbsUp className="h-6 w-6 text-expediaBlue" />,
+    title: "Easy to get around",
+    description: "Guests love the convenient spot for exploring the area.",
+  });
+
+  return highlights.slice(0, 4);
+}
+
+/* ── Accordion section ── */
 function AccordionSection({ title, icon, items }: { title: string; icon: string; items: string[] }) {
   const [open, setOpen] = useState(false);
   if (items.length === 0) return null;
   return (
     <div className="border-b border-slate-100 last:border-0">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="flex w-full items-center justify-between py-3.5 text-left"
-      >
+      <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center justify-between py-3.5 text-left">
         <div className="flex items-center gap-2.5">
           <span className="text-lg">{icon}</span>
           <span className="text-sm font-semibold text-slate-800">{title}</span>
@@ -77,28 +139,20 @@ function AccordionSection({ title, icon, items }: { title: string; icon: string;
   );
 }
 
-/* ── Policy card component ── */
+/* ── Policy card ── */
 function PolicyCard({ icon, title, items }: { icon: React.ReactNode; title: string; items: string[] }) {
   if (items.length === 0) return null;
-
-  function cleanHtml(text: string) {
-    return text.replace(/<\/?[^>]+(>|$)/g, "").trim();
-  }
-
+  function cleanHtml(text: string) { return text.replace(/<\/?[^>]+(>|$)/g, "").trim(); }
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5">
-      <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-        {icon}
-        {title}
-      </div>
+      <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">{icon}{title}</div>
       <ul className="mt-3 space-y-2">
         {items.map((item, i) => {
           const cleaned = cleanHtml(item);
           if (!cleaned) return null;
           return (
             <li key={i} className="flex items-start gap-2 text-sm text-slate-600">
-              <span className="mt-0.5 text-slate-300">•</span>
-              <span>{cleaned}</span>
+              <span className="mt-0.5 text-slate-300">•</span><span>{cleaned}</span>
             </li>
           );
         })}
@@ -116,6 +170,7 @@ export function HotelDetailClient({ hotel }: { hotel: HotelRecord }) {
   const [voiceState, setVoiceState] = useState<"idle" | "listening" | "captured">("idle");
   const [voiceText, setVoiceText] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [showIntelModal, setShowIntelModal] = useState(false);
 
   useEffect(() => {
     async function loadHotelContext() {
@@ -184,6 +239,9 @@ export function HotelDetailClient({ hotel }: { hotel: HotelRecord }) {
     }, 1200);
   }
 
+  const highlights = useMemo(() => generateHighlights(hotel, reviews.length || hotel.reviewCount), [hotel, reviews.length]);
+  const [showAllAmenities, setShowAllAmenities] = useState(false);
+
   return (
     <main className="min-h-screen bg-expediaBg text-slate-900">
       <SiteHeader />
@@ -197,123 +255,155 @@ export function HotelDetailClient({ hotel }: { hotel: HotelRecord }) {
           Back to hotels
         </Link>
 
-        {/* ═══════════ SECTION 1: Property Overview (Hero) ═══════════ */}
+        {/* ═══════════ Image Gallery ═══════════ */}
         <section className="mt-6">
-          <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
-            {/* Left: Image gallery */}
-            <div className="space-y-6">
-              <div className="grid grid-cols-4 grid-rows-2 gap-2 overflow-hidden rounded-[26px]" style={{ height: 380 }}>
-                <div className="relative col-span-2 row-span-2">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={getHotelImage(hotel)} alt={hotel.name} className="h-full w-full object-cover" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
-                  <div className="absolute bottom-5 left-5">
-                    {hotel.starRating && (
-                      <div className="mb-2 flex items-center gap-0.5">
-                        {Array.from({ length: Math.round(hotel.starRating) }).map((_, i) => (
-                          <Star key={i} className="h-4 w-4 fill-amber-400 text-amber-400" />
-                        ))}
-                        <span className="ml-1.5 text-sm font-semibold text-white/90">{hotel.starRating}-star hotel</span>
-                      </div>
-                    )}
-                    <h1 className="text-3xl font-bold text-white drop-shadow-lg">{hotel.name}</h1>
-                    <div className="mt-1.5 flex items-center gap-1.5 text-white/90">
-                      <MapPin className="h-3.5 w-3.5" />
-                      <span className="text-sm">{hotelSubtitle(hotel)}</span>
-                    </div>
+          <div className="grid grid-cols-4 grid-rows-2 gap-2 overflow-hidden rounded-[26px]" style={{ height: 400 }}>
+            <div className="relative col-span-2 row-span-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={getHotelImage(hotel)} alt={hotel.name} className="h-full w-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+              <div className="absolute bottom-5 left-5">
+                {hotel.starRating && (
+                  <div className="mb-2 flex items-center gap-0.5">
+                    {Array.from({ length: Math.round(hotel.starRating) }).map((_, i) => (
+                      <Star key={i} className="h-4 w-4 fill-amber-400 text-amber-400" />
+                    ))}
+                    <span className="ml-1.5 text-sm font-semibold text-white/90">{hotel.starRating}-star hotel</span>
                   </div>
-                </div>
-                {getHotelGallery(hotel).map((src, i) => (
-                  <div key={i} className="relative overflow-hidden">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={src} alt={`${hotel.name} photo ${i + 2}`} className="h-full w-full object-cover transition hover:scale-105" />
-                  </div>
-                ))}
-              </div>
-
-              {/* Quick stats bar */}
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5">
-                  <span className="text-xl font-bold text-white">{(hotel.rating ?? 8).toFixed(1)}</span>
-                  <div className="border-l border-white/30 pl-2">
-                    <div className="text-sm font-semibold text-white">{ratingLabel(hotel.rating)}</div>
-                    <div className="text-[11px] text-emerald-100">{hotel.reviewCount} reviews</div>
-                  </div>
-                </div>
-                {hotel.popularAmenities.slice(0, 6).map((amenity) => (
-                  <span key={amenity} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-700 shadow-sm">
-                    <span className="text-base">{getAmenityIcon(amenity)}</span>
-                    {amenity}
-                  </span>
-                ))}
-                {hotel.popularAmenities.length > 6 && (
-                  <span className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-medium text-expediaBlue shadow-sm">
-                    +{hotel.popularAmenities.length - 6} more
-                  </span>
                 )}
+                <h1 className="text-3xl font-bold text-white drop-shadow-lg">{hotel.name}</h1>
+                <div className="mt-1.5 flex items-center gap-1.5 text-white/90">
+                  <MapPin className="h-3.5 w-3.5" />
+                  <span className="text-sm">{hotelSubtitle(hotel)}</span>
+                </div>
               </div>
             </div>
-
-            {/* Right: About this property */}
-            <div className="rounded-[26px] border border-slate-200 bg-white p-7 shadow-card">
-              <h2 className="text-xl font-bold text-[#0b1638]">About this property</h2>
-              <p className="mt-4 text-[15px] leading-7 text-slate-600">{hotel.description}</p>
-
-              {hotel.areaDescription && (
-                <div className="mt-6 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 p-5">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-expediaBlue">
-                    <Globe className="h-4 w-4" />
-                    Explore the area
-                  </div>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">{hotel.areaDescription}</p>
-                </div>
-              )}
-            </div>
+            {getHotelGallery(hotel).map((src, i) => (
+              <div key={i} className="relative overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={src} alt={`${hotel.name} photo ${i + 2}`} className="h-full w-full object-cover transition hover:scale-105" />
+              </div>
+            ))}
           </div>
         </section>
 
-        {/* ═══════════ SECTION 2: Popular Amenities ═══════════ */}
-        {hotel.popularAmenities.length > 0 && (
-          <section className="mt-8">
-            <div className="rounded-[26px] border border-slate-200 bg-white p-7 shadow-card">
-              <h2 className="text-xl font-bold text-[#0b1638]">Popular Amenities</h2>
-              <div className="mt-4 flex flex-wrap gap-2.5">
-                {hotel.popularAmenities.map((amenity) => (
-                  <span
-                    key={amenity}
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700"
-                  >
-                    <span className="text-lg">{getAmenityIcon(amenity)}</span>
-                    {amenity}
-                  </span>
+        {/* ═══════════ Rating + Highlights / Explore the Area ═══════════ */}
+        <section className="mt-8 grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
+          {/* Left: Rating + Highlights */}
+          <div>
+            {/* Rating badge (Expedia style) */}
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-700">
+                <span className="text-lg font-bold text-white">{(hotel.rating ?? 8).toFixed(1)}</span>
+              </div>
+              <div>
+                <div className="text-xl font-bold text-slate-900">{ratingLabel(hotel.rating)}</div>
+                <button
+                  onClick={() => setShowIntelModal(true)}
+                  className="mt-0.5 flex items-center gap-1 text-sm font-semibold text-expediaBlue hover:underline"
+                >
+                  See all {hotel.reviewCount} reviews <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Highlights */}
+            <div className="mt-8">
+              <h2 className="text-xl font-bold text-slate-900">Highlights for your trip</h2>
+              <div className="mt-5 space-y-5">
+                {highlights.map((h, i) => (
+                  <div key={i} className="flex items-start gap-4">
+                    <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-blue-50">
+                      {h.icon}
+                    </div>
+                    <div>
+                      <div className="text-[15px] font-bold text-slate-900">{h.title}</div>
+                      <div className="mt-0.5 text-sm text-slate-500">{h.description}</div>
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
-          </section>
-        )}
+          </div>
 
-        {/* ═══════════ SECTION 3: Amenities by Category (Accordion) ═══════════ */}
-        <section className="mt-6">
-          <div className="rounded-[26px] border border-slate-200 bg-white p-7 shadow-card">
-            <h2 className="text-xl font-bold text-[#0b1638]">Amenities by Category</h2>
+          {/* Right: Explore the area */}
+          <div className="rounded-[22px] border border-slate-200 bg-white p-6 shadow-card">
+            <div className="flex items-center gap-2 text-lg font-bold text-slate-900">
+              <Globe className="h-5 w-5 text-expediaBlue" />
+              Explore the area
+            </div>
+            {hotel.areaDescription && (
+              <p className="mt-3 text-sm leading-6 text-slate-500">{hotel.areaDescription}</p>
+            )}
+            {/* Nearby activities from amenityCategories */}
+            {hotel.amenityCategories.activitiesNearby.length > 0 && (
+              <div className="mt-5 space-y-3">
+                {hotel.amenityCategories.activitiesNearby.slice(0, 5).map((activity, i) => (
+                  <div key={i} className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <MapPin className="h-4 w-4 text-expediaBlue" />
+                      <span className="text-sm text-slate-700">{activity}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {hotel.amenityCategories.thingsToDo.length > 0 && (
+              <div className="mt-4 space-y-3">
+                {hotel.amenityCategories.thingsToDo.slice(0, 3).map((item, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <MapPin className="h-4 w-4 text-expediaBlue" />
+                    <span className="text-sm text-slate-700">{item}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* ═══════════ About this Property (2-col icon grid) ═══════════ */}
+        <section className="mt-8">
+          <h2 className="text-xl font-bold text-slate-900">About this property</h2>
+
+          {/* Popular amenities as 2-col icon grid (Expedia style) */}
+          <div className="mt-5 grid grid-cols-2 gap-x-12 gap-y-4 sm:grid-cols-3 lg:grid-cols-4">
+            {hotel.popularAmenities.slice(0, showAllAmenities ? undefined : 6).map((amenity) => (
+              <div key={amenity} className="flex items-center gap-3">
+                <span className="text-slate-600">{getPopularIcon(amenity)}</span>
+                <span className="text-sm text-slate-700">{amenity}</span>
+              </div>
+            ))}
+          </div>
+          {hotel.popularAmenities.length > 6 && !showAllAmenities && (
+            <button
+              onClick={() => setShowAllAmenities(true)}
+              className="mt-4 flex items-center gap-1 text-sm font-semibold text-expediaBlue hover:underline"
+            >
+              See all about this property <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          )}
+
+          {/* Property description */}
+          <p className="mt-5 max-w-3xl text-[15px] leading-7 text-slate-600">{hotel.description}</p>
+        </section>
+
+        {/* ═══════════ Amenities by Category (Accordion) ═══════════ */}
+        <section className="mt-8">
+          <div className="rounded-[22px] border border-slate-200 bg-white p-7 shadow-card">
+            <h2 className="text-xl font-bold text-slate-900">Amenities by Category</h2>
             <div className="mt-4">
               {(Object.entries(hotel.amenityCategories) as [keyof AmenityCategories, string[]][]).map(([key, items]) => (
-                <AccordionSection
-                  key={key}
-                  title={AMENITY_CATEGORY_LABELS[key]}
-                  icon={CATEGORY_ICONS[key]}
-                  items={items}
-                />
+                <AccordionSection key={key} title={AMENITY_CATEGORY_LABELS[key]} icon={CATEGORY_ICONS[key]} items={items} />
               ))}
             </div>
           </div>
         </section>
 
-        {/* ═══════════ SECTION 4 & 5: Check-in/out + Policies (side by side) ═══════════ */}
-        <section className="mt-6 grid gap-6 lg:grid-cols-2">
+        {/* ═══════════ Check-in/out + Policies ═══════════ */}
+        <section className="mt-8 grid gap-6 lg:grid-cols-2">
           {/* Check-in & Check-out */}
-          <div className="rounded-[26px] border border-slate-200 bg-white p-7 shadow-card">
-            <h2 className="flex items-center gap-2 text-xl font-bold text-[#0b1638]">
+          <div className="rounded-[22px] border border-slate-200 bg-white p-7 shadow-card">
+            <h2 className="flex items-center gap-2 text-xl font-bold text-slate-900">
               <Clock className="h-5 w-5 text-expediaBlue" />
               Check-in & Check-out
             </h2>
@@ -334,29 +424,25 @@ export function HotelDetailClient({ hotel }: { hotel: HotelRecord }) {
                   </div>
                 )}
               </div>
-
               {hotel.checkIn.instructions.length > 0 && (
                 <div>
                   <div className="text-sm font-semibold text-slate-700">Instructions</div>
                   <ul className="mt-2 space-y-1.5">
                     {hotel.checkIn.instructions.map((inst, i) => (
                       <li key={i} className="flex items-start gap-2 text-sm text-slate-600">
-                        <span className="mt-0.5 text-slate-300">•</span>
-                        <span>{inst}</span>
+                        <span className="mt-0.5 text-slate-300">•</span><span>{inst}</span>
                       </li>
                     ))}
                   </ul>
                 </div>
               )}
-
               {hotel.checkOut.policy.length > 0 && (
                 <div>
                   <div className="text-sm font-semibold text-slate-700">Check-out policy</div>
                   <ul className="mt-2 space-y-1.5">
                     {hotel.checkOut.policy.map((p, i) => (
                       <li key={i} className="flex items-start gap-2 text-sm text-slate-600">
-                        <span className="mt-0.5 text-slate-300">•</span>
-                        <span>{p}</span>
+                        <span className="mt-0.5 text-slate-300">•</span><span>{p}</span>
                       </li>
                     ))}
                   </ul>
@@ -367,29 +453,17 @@ export function HotelDetailClient({ hotel }: { hotel: HotelRecord }) {
 
           {/* Policies */}
           <div className="space-y-4">
-            <h2 className="flex items-center gap-2 text-xl font-bold text-[#0b1638]">
+            <h2 className="flex items-center gap-2 text-xl font-bold text-slate-900">
               <ShieldCheck className="h-5 w-5 text-expediaBlue" />
               Policies
             </h2>
-            <PolicyCard
-              icon={<PawPrint className="h-4 w-4 text-slate-500" />}
-              title="Pet Policy"
-              items={hotel.policies.pet}
-            />
-            <PolicyCard
-              icon={<Baby className="h-4 w-4 text-slate-500" />}
-              title="Children & Extra Bed Policy"
-              items={hotel.policies.childrenAndExtraBed}
-            />
-            <PolicyCard
-              icon={<AlertTriangle className="h-4 w-4 text-slate-500" />}
-              title="Know Before You Go"
-              items={hotel.policies.knowBeforeYouGo}
-            />
+            <PolicyCard icon={<PawPrint className="h-4 w-4 text-slate-500" />} title="Pet Policy" items={hotel.policies.pet} />
+            <PolicyCard icon={<Baby className="h-4 w-4 text-slate-500" />} title="Children & Extra Bed Policy" items={hotel.policies.childrenAndExtraBed} />
+            <PolicyCard icon={<AlertTriangle className="h-4 w-4 text-slate-500" />} title="Know Before You Go" items={hotel.policies.knowBeforeYouGo} />
           </div>
         </section>
 
-        {/* ═══════════ SECTION 6: Property Knowledge Health ═══════════ */}
+        {/* ═══════════ Property Knowledge Health ═══════════ */}
         <section className="mt-8">
           <KnowledgeHealthPanel hotelId={hotel.id} />
         </section>
@@ -516,6 +590,14 @@ export function HotelDetailClient({ hotel }: { hotel: HotelRecord }) {
           </div>
         </section>
       </div>
+      {/* ═══════════ Review Intelligence Modal ═══════════ */}
+      {showIntelModal && (
+        <ReviewIntelligenceModal
+          hotel={hotel}
+          reviews={reviews}
+          onClose={() => setShowIntelModal(false)}
+        />
+      )}
     </main>
   );
 }

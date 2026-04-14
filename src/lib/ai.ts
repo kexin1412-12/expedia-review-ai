@@ -1,10 +1,16 @@
 import OpenAI from "openai";
+import { HttpsProxyAgent } from "https-proxy-agent";
 import { HotelRecord, ReviewRecord, FollowUpResponse, DimensionHealth, SuggestedQuestion, DiscoveredDimension, ReviewDimensionTag } from "@/types";
 
 function getClient() {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
-  return new OpenAI({ apiKey });
+  const proxy = process.env.HTTPS_PROXY || process.env.https_proxy;
+  const opts: ConstructorParameters<typeof OpenAI>[0] = { apiKey };
+  if (proxy) {
+    opts.httpAgent = new HttpsProxyAgent(proxy);
+  }
+  return new OpenAI(opts);
 }
 
 function topAmenities(hotel: HotelRecord) {
