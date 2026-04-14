@@ -481,7 +481,7 @@ export function HotelDetailClient({ hotel }: { hotel: HotelRecord }) {
           )}
 
           {/* Property description */}
-          <p className="mt-5 max-w-3xl text-[15px] leading-7 text-slate-600">{hotel.description}</p>
+          <p className="mt-5 text-[15px] leading-7 text-slate-600">{hotel.description}</p>
         </section>
 
         {/* ═══════ Check-in/out + Policies ═══════ */}
