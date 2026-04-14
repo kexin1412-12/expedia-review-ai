@@ -7,6 +7,7 @@ import { FollowUpResponse, HotelRecord, HotelSummaryResponse, ReviewRecord } fro
 import { getHotelImage, hotelGradient, hotelSubtitle, initials } from "@/lib/hotel-display";
 import { ReviewCard } from "@/components/review-card";
 import { SiteHeader } from "@/components/site-header";
+import { KnowledgeHealthPanel } from "@/components/knowledge-health-panel";
 
 const fallbackReview = "The room was very clean and the staff were friendly. Check-in was smooth.";
 
@@ -153,6 +154,11 @@ export function HotelDetailClient({ hotel }: { hotel: HotelRecord }) {
               ))}
             </div>
           </div>
+        </section>
+
+        {/* ── Property Knowledge Health ── */}
+        <section className="mt-8">
+          <KnowledgeHealthPanel hotelId={hotel.id} />
         </section>
 
         <section className="mt-10 grid gap-8 lg:grid-cols-[0.95fr_1.05fr]">

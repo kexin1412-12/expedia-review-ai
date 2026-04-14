@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { HotelRecord, ReviewRecord } from "@/types";
+import { HotelRecord, ReviewRecord, FollowUpResponse } from "@/types";
 
 function getClient() {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -105,5 +105,100 @@ Return valid JSON only in this format:
     return parsed;
   } catch {
     return fallback;
+  }
+}
+
+/* ────────────────────────────────────────
+   Knowledge Health – dynamic follow-ups
+   ──────────────────────────────────────── */
+
+export interface GapSignal {
+  dimension: string;
+  coverage: string;
+  mentionCount: number;
+  recentMentionCount: number;
+  avgScore: number | null;
+}
+
+interface HealthAIResult {
+  followUps: FollowUpResponse[];
+  dimensionQuestions: { dimension: string; questions: string[] }[];
+}
+
+export async function generateHealthFollowUps(
+  hotel: HotelRecord,
+  reviews: ReviewRecord[],
+  gapSignals: GapSignal[],
+): Promise<HealthAIResult> {
+  const client = getClient();
+  const sampleReviews = reviews
+    .slice(0, 20)
+    .map((r) => r.text)
+    .filter(Boolean);
+
+  const fallbackResult: HealthAIResult = {
+    followUps: gapSignals.slice(0, 2).map((g) => ({
+      topic: g.dimension,
+      question: `How was the ${g.dimension.toLowerCase()} during your stay?`,
+      rationale: `${g.dimension} has ${g.coverage.toLowerCase()} in recent reviews.`,
+      quickReplies: ["Great", "Good", "Fair", "Poor"],
+    })),
+    dimensionQuestions: gapSignals.map((g) => ({
+      dimension: g.dimension,
+      questions: [`How was the ${g.dimension.toLowerCase()}?`],
+    })),
+  };
+
+  if (!client || sampleReviews.length === 0) {
+    return fallbackResult;
+  }
+
+  const prompt = `You are an Expedia product analyst identifying knowledge gaps in hotel reviews.
+
+Context:
+- Property: ${hotel.name} in ${hotel.city ?? "unknown city"}
+- Description: ${hotel.description}
+- Amenities: ${hotel.amenities.join(", ")}
+
+Gap signals detected (dimensions needing more coverage):
+${JSON.stringify(gapSignals, null, 2)}
+
+Sample recent reviews:
+${sampleReviews.join("\n---\n")}
+
+Tasks:
+1. Generate 1-2 dynamic follow-up questions targeting the most important gaps. Each should be low-friction and easy for a guest to answer.
+2. For each gap dimension, suggest 1-2 specific question candidates that could be asked.
+
+Return valid JSON only in this format:
+{
+  "followUps": [
+    {
+      "topic": "dimension label",
+      "question": "short question text",
+      "rationale": "one sentence rationale",
+      "quickReplies": ["option1", "option2", "option3", "option4"]
+    }
+  ],
+  "dimensionQuestions": [
+    {
+      "dimension": "exact dimension label from input",
+      "questions": ["question 1", "question 2"]
+    }
+  ]
+}`;
+
+  try {
+    const response = await client.responses.create({
+      model: "gpt-4.1-mini",
+      input: prompt,
+    });
+    const parsed = JSON.parse(response.output_text);
+    if (!Array.isArray(parsed.followUps) || !Array.isArray(parsed.dimensionQuestions)) {
+      return fallbackResult;
+    }
+    return parsed;
+  } catch {
+    return fallbackResult;
   }
 }

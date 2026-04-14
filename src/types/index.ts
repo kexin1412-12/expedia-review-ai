@@ -32,3 +32,40 @@ export interface HotelSummaryResponse {
   summary: string;
   highlights: string[];
 }
+
+/* ───── Property Knowledge Health ───── */
+
+export type CoverageStatus =
+  | "WELL COVERED"
+  | "MEDIUM COVERAGE"
+  | "LOW RECENT COVERAGE"
+  | "STALE"
+  | "UNCERTAIN";
+
+export type TrendDirection = "improving" | "stable" | "declining" | "unknown";
+
+export interface TimelineEntry {
+  month: string;          // e.g. "2023-02"
+  mentionCount: number;
+  avgScore: number | null; // null when no structured score
+}
+
+export interface DimensionHealth {
+  dimension: string;       // e.g. "Cleanliness"
+  coverage: CoverageStatus;
+  trend: TrendDirection;
+  timeline: TimelineEntry[];
+  questionCandidates: string[];
+  summary: string;
+  mentionCount: number;
+  recentMentionCount: number;
+  avgScore: number | null;
+}
+
+export interface KnowledgeHealthResponse {
+  hotelId: string;
+  dimensions: DimensionHealth[];
+  dynamicFollowUps: FollowUpResponse[];
+  overallScore: number;   // 0-100
+  generatedAt: string;    // ISO timestamp
+}
