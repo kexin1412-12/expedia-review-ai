@@ -36,9 +36,19 @@ const COMMON_EN = new Set([
 ]);
 
 /** Heuristic: is the text likely non-English? */
-function isLikelyNonEnglish(text) {
+function isLikelyNonEnglish(text, { shortText = false } = {}) {
+  // Non-ASCII letters are a strong signal
+  const hasNonAscii = /[^\x00-\x7F]/.test(text);
   const words = text.toLowerCase().replace(/[^\p{L}\s]/gu, "").split(/\s+/).filter(Boolean);
-  if (words.length < 4) return false; // too short to judge
+  if (words.length === 0) return false;
+  // For short text (titles): flag if has non-ASCII, or if >= 2 words with 0 EN hits
+  if (words.length < 4) {
+    if (hasNonAscii) return true;
+    if (!shortText) return false;
+    let enHits = 0;
+    for (const w of words) { if (COMMON_EN.has(w)) enHits++; }
+    return words.length >= 2 && enHits === 0;
+  }
   let enHits = 0;
   for (const w of words) {
     if (COMMON_EN.has(w)) enHits++;
@@ -180,6 +190,16 @@ async function main() {
       // Also clean title if present
       if (r.title) {
         r.title = removeMasks(r.title, hotel);
+        if (isLikelyNonEnglish(r.title, { shortText: true })) {
+          try {
+            const translated = await translateToEnglish(r.title);
+            r.title = translated;
+            process.stdout.write(`    ✓ translated title ${i + 1}\n`);
+            await delay(500);
+          } catch (err) {
+            console.warn(`    ✗ translate title failed ${i + 1}: ${err.message}`);
+          }
+        }
         r.title = standardize(r.title);
       }
 

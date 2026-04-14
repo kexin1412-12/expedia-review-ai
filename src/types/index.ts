@@ -44,15 +44,24 @@ export type HealthStatus =
 
 export type TrendDirection = "up" | "down" | "stable";
 
-export type DimensionKey =
-  | "cleanliness"
-  | "service"
-  | "check_in"
-  | "breakfast"
-  | "pool"
-  | "parking"
-  | "noise"
-  | "wifi";
+/** AI-discovered dimension (dynamic per property) */
+export interface DiscoveredDimension {
+  key: string;
+  label: string;
+  description: string;
+  keywords: string[];
+  staleAfterDays: number;
+}
+
+/** Per-review dimension tag from AI mapping */
+export interface ReviewDimensionTag {
+  reviewIndex: number;
+  dimensions: {
+    key: string;
+    sentiment: "positive" | "negative" | "mixed" | "neutral";
+    evidence: string;
+  }[];
+}
 
 export interface TimelineEntry {
   bucket: string;
@@ -61,26 +70,25 @@ export interface TimelineEntry {
 }
 
 export interface DimensionHealth {
-  dimension: DimensionKey;
+  dimension: string;
   label: string;
   status: HealthStatus;
   trend: TrendDirection;
-  confidence: number;         // 0-1
-  score: number;              // priority score for gap detection
+  confidence: number;
+  score: number;
   totalMentions: number;
   recentMentions30d: number;
   staleDays: number | null;
+  negativeShare: number;
   avgRating: number | null;
   timeline: TimelineEntry[];
-  propertyHasOfficialInfo: boolean;
-  propertyFieldCoverage: string[];
   summary: string;
   refreshReason: string;
   questionCandidates: string[];
 }
 
 export interface SuggestedQuestion {
-  dimension: DimensionKey;
+  dimension: string;
   question: string;
   why: string;
   answerType: "text" | "yes_no" | "choice";
@@ -92,7 +100,7 @@ export interface KnowledgeHealthResponse {
   dimensions: DimensionHealth[];
   suggestedQuestions: SuggestedQuestion[];
   aiSummary: string;
-  overallScore: number;       // 0-100
+  overallScore: number;
   reviewCount: number;
   generatedAt: string;
 }

@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { HotelRecord, ReviewRecord, FollowUpResponse, DimensionHealth, SuggestedQuestion, DimensionKey } from "@/types";
+import { HotelRecord, ReviewRecord, FollowUpResponse, DimensionHealth, SuggestedQuestion, DiscoveredDimension, ReviewDimensionTag } from "@/types";
 
 function getClient() {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -109,13 +109,282 @@ Return valid JSON only in this format:
 }
 
 /* ────────────────────────────────────────
-   Knowledge Health – AI refinement
+   Knowledge Health – Adaptive AI pipeline
    ──────────────────────────────────────── */
 
-const DIMENSION_KEYS: DimensionKey[] = [
-  "cleanliness", "service", "check_in", "breakfast",
-  "pool", "parking", "noise", "wifi",
+function buildPropertyContext(hotel: HotelRecord): string {
+  return [
+    `Name: ${hotel.name}`,
+    hotel.city ? `City: ${hotel.city}` : null,
+    hotel.province ? `Province: ${hotel.province}` : null,
+    hotel.country ? `Country: ${hotel.country}` : null,
+    hotel.starRating ? `Stars: ${hotel.starRating}` : null,
+    hotel.description ? `Description: ${hotel.description.slice(0, 400)}` : null,
+    hotel.amenities.length > 0 ? `Amenities: ${hotel.amenities.join(", ")}` : null,
+  ].filter(Boolean).join("\n");
+}
+
+function condensedReviewsJson(reviews: ReviewRecord[], limit = 50): string {
+  return JSON.stringify(
+    reviews.slice(0, limit).map((r, i) => ({
+      i,
+      date: r.date,
+      text: (r.text ?? "").slice(0, 300),
+    })),
+  );
+}
+
+/* ── Step 1: Dimension Discovery ── */
+
+const DISCOVER_SYSTEM = `You discover and refine normalized hotel review dimensions from review text. Return only strict JSON.`;
+
+function discoverPrompt(propertyCtx: string, reviewsJson: string): string {
+  return `You are analyzing hotel reviews for one property.
+
+Your task is to discover the most important review dimensions for this property based on the review text itself.
+
+Goal:
+- Infer 8 to 14 dimensions that best describe what guests actually talk about.
+- Merge similar topics into one normalized dimension.
+- Prefer dimensions that are actionable for a travel review product.
+- Include both stable experience dimensions and dynamic / time-sensitive dimensions.
+- Avoid dimensions that are too broad, too vague, or duplicated.
+
+Normalization rules:
+- Merge synonyms and related phrases under one label.
+  Example: "internet", "wifi", "connection" -> "Wi-Fi"
+  Example: "front desk", "arrival", "late arrival" -> "Check-in Experience"
+- Dimension labels must be concise, user-facing, and title-cased.
+- Each dimension must include a short description.
+- Each dimension must include 5-12 representative keywords or phrases.
+- Assign a staleAfterDays value:
+  - 21-30 days for dynamic operational dimensions (breakfast, pool, wifi, check-in, amenities availability, policy clarity)
+  - 45-60 days for more stable dimensions (cleanliness, room comfort, service, location)
+
+Property context:
+${propertyCtx}
+
+Reviews:
+${reviewsJson}
+
+Return strict JSON:
+{
+  "dimensions": [
+    {
+      "key": "check_in_experience",
+      "label": "Check-in Experience",
+      "description": "Guest comments about arrival, front desk process, waiting time, key pickup, and check-in clarity.",
+      "keywords": ["check in", "check-in", "front desk", "arrival", "key card", "reception"],
+      "staleAfterDays": 30
+    }
+  ]
+}
+
+Rules:
+- Return 8 to 14 dimensions only.
+- No duplicate dimensions.
+- Keywords must be grounded in the review language.`;
+}
+
+const DISCOVER_SCHEMA = {
+  type: "object" as const,
+  additionalProperties: false,
+  properties: {
+    dimensions: {
+      type: "array" as const,
+      items: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          key: { type: "string" as const },
+          label: { type: "string" as const },
+          description: { type: "string" as const },
+          keywords: { type: "array" as const, items: { type: "string" as const } },
+          staleAfterDays: { type: "number" as const },
+        },
+        required: ["key", "label", "description", "keywords", "staleAfterDays"] as const,
+      },
+    },
+  },
+  required: ["dimensions"] as const,
+};
+
+/** Default fallback dimensions when AI is unavailable */
+const FALLBACK_DIMENSIONS: DiscoveredDimension[] = [
+  { key: "cleanliness", label: "Cleanliness", description: "Room and bathroom cleanliness.", keywords: ["clean", "dirty", "spotless", "housekeeping", "hygiene", "stain", "dust", "mold"], staleAfterDays: 60 },
+  { key: "service", label: "Service", description: "Staff friendliness and helpfulness.", keywords: ["staff", "service", "friendly", "helpful", "rude", "reception", "concierge"], staleAfterDays: 45 },
+  { key: "check_in", label: "Check-in Experience", description: "Arrival and front desk process.", keywords: ["check in", "check-in", "front desk", "arrival", "key card", "reception", "queue"], staleAfterDays: 30 },
+  { key: "breakfast", label: "Breakfast", description: "Morning meal quality and availability.", keywords: ["breakfast", "buffet", "coffee", "morning meal", "eggs", "continental"], staleAfterDays: 30 },
+  { key: "room_comfort", label: "Room Comfort", description: "Bed, AC, noise insulation, and room amenities.", keywords: ["bed", "mattress", "pillow", "comfortable", "air conditioning", "AC", "temperature"], staleAfterDays: 60 },
+  { key: "location", label: "Location", description: "Convenience of the hotel's location.", keywords: ["location", "close to", "walking distance", "central", "convenient", "nearby", "transport"], staleAfterDays: 60 },
+  { key: "wifi", label: "Wi-Fi", description: "Internet speed and reliability.", keywords: ["wifi", "wi-fi", "internet", "connection", "signal", "network"], staleAfterDays: 30 },
+  { key: "value", label: "Value for Money", description: "Whether the price matched the experience.", keywords: ["value", "price", "expensive", "cheap", "worth", "overpriced", "affordable"], staleAfterDays: 45 },
 ];
+
+export async function discoverDimensions(
+  hotel: HotelRecord,
+  reviews: ReviewRecord[],
+): Promise<DiscoveredDimension[]> {
+  const client = getClient();
+  if (!client) return FALLBACK_DIMENSIONS;
+
+  const prompt = discoverPrompt(
+    buildPropertyContext(hotel),
+    condensedReviewsJson(reviews),
+  );
+
+  try {
+    const response = await client.responses.create({
+      model: "gpt-4.1-mini",
+      input: [
+        { role: "system", content: DISCOVER_SYSTEM },
+        { role: "user", content: prompt },
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "discovered_dimensions",
+          strict: true,
+          schema: DISCOVER_SCHEMA,
+        },
+      },
+    });
+
+    const parsed = JSON.parse(response.output_text) as { dimensions: DiscoveredDimension[] };
+    if (!Array.isArray(parsed.dimensions) || parsed.dimensions.length === 0) {
+      return FALLBACK_DIMENSIONS;
+    }
+    return parsed.dimensions.slice(0, 14);
+  } catch {
+    return FALLBACK_DIMENSIONS;
+  }
+}
+
+/* ── Step 2: Review-to-Dimension Tagging ── */
+
+function tagPrompt(dimensionsJson: string, reviewsJson: string): string {
+  return `You are tagging hotel reviews into normalized dimensions.
+
+You will receive:
+1. A list of dimensions
+2. A batch of reviews
+
+For each review:
+- assign 0 to 3 relevant dimensions
+- classify sentiment for each assigned dimension as positive, negative, mixed, or neutral
+- extract a short evidence phrase
+
+Dimension list:
+${dimensionsJson}
+
+Reviews:
+${reviewsJson}
+
+Return strict JSON:
+{
+  "reviewTags": [
+    {
+      "reviewIndex": 0,
+      "dimensions": [
+        {
+          "key": "breakfast",
+          "sentiment": "negative",
+          "evidence": "breakfast options were limited"
+        }
+      ]
+    }
+  ]
+}
+
+Rules:
+- Only assign dimensions clearly supported by the review text.
+- Do not force every review into a dimension.
+- Keep evidence short and verbatim-ish.`;
+}
+
+const TAG_SCHEMA = {
+  type: "object" as const,
+  additionalProperties: false,
+  properties: {
+    reviewTags: {
+      type: "array" as const,
+      items: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          reviewIndex: { type: "number" as const },
+          dimensions: {
+            type: "array" as const,
+            items: {
+              type: "object" as const,
+              additionalProperties: false,
+              properties: {
+                key: { type: "string" as const },
+                sentiment: { type: "string" as const, enum: ["positive", "negative", "mixed", "neutral"] },
+                evidence: { type: "string" as const },
+              },
+              required: ["key", "sentiment", "evidence"] as const,
+            },
+          },
+        },
+        required: ["reviewIndex", "dimensions"] as const,
+      },
+    },
+  },
+  required: ["reviewTags"] as const,
+};
+
+export async function tagReviewsDimensions(
+  dimensions: DiscoveredDimension[],
+  reviews: ReviewRecord[],
+): Promise<ReviewDimensionTag[]> {
+  const client = getClient();
+  if (!client) return [];
+
+  const dimJson = JSON.stringify(
+    dimensions.map((d) => ({ key: d.key, label: d.label, keywords: d.keywords })),
+  );
+
+  // Process in batches of 30
+  const BATCH = 30;
+  const allTags: ReviewDimensionTag[] = [];
+
+  for (let start = 0; start < reviews.length; start += BATCH) {
+    const batch = reviews.slice(start, start + BATCH);
+    const batchJson = JSON.stringify(
+      batch.map((r, i) => ({ i: start + i, date: r.date, text: (r.text ?? "").slice(0, 300) })),
+    );
+
+    try {
+      const response = await client.responses.create({
+        model: "gpt-4.1-mini",
+        input: [
+          { role: "system", content: "You tag hotel reviews into dimensions with sentiment. Return only strict JSON." },
+          { role: "user", content: tagPrompt(dimJson, batchJson) },
+        ],
+        text: {
+          format: {
+            type: "json_schema",
+            name: "review_dimension_tags",
+            strict: true,
+            schema: TAG_SCHEMA,
+          },
+        },
+      });
+
+      const parsed = JSON.parse(response.output_text) as { reviewTags: ReviewDimensionTag[] };
+      if (Array.isArray(parsed.reviewTags)) {
+        allTags.push(...parsed.reviewTags);
+      }
+    } catch {
+      // continue with next batch
+    }
+  }
+
+  return allTags;
+}
+
+/* ── Step 3: Question Generation ── */
 
 interface RefineHealthInput {
   hotel: HotelRecord;
@@ -123,6 +392,7 @@ interface RefineHealthInput {
   cards: DimensionHealth[];
   fallbackQuestions: SuggestedQuestion[];
   maxQuestions: number;
+  dimensionKeys: string[];
 }
 
 interface RefineHealthResult {
@@ -152,11 +422,9 @@ export async function refineHealthWithAI(params: RefineHealthInput): Promise<Ref
       id: hotel.id,
       name: hotel.name,
       city: hotel.city,
-      province: hotel.province,
       country: hotel.country,
       starRating: hotel.starRating,
       description: hotel.description.slice(0, 500),
-      areaDescription: hotel.areaDescription.slice(0, 300),
       amenities: hotel.amenities,
     },
     healthCards: cards,
@@ -192,27 +460,27 @@ export async function refineHealthWithAI(params: RefineHealthInput): Promise<Ref
           name: "review_gap_questions",
           strict: true,
           schema: {
-            type: "object",
+            type: "object" as const,
             additionalProperties: false,
             properties: {
-              aiSummary: { type: "string" },
+              aiSummary: { type: "string" as const },
               questions: {
-                type: "array",
+                type: "array" as const,
                 items: {
-                  type: "object",
+                  type: "object" as const,
                   additionalProperties: false,
                   properties: {
-                    dimension: { type: "string", enum: DIMENSION_KEYS },
-                    question: { type: "string" },
-                    why: { type: "string" },
-                    answerType: { type: "string", enum: ["text", "yes_no", "choice"] },
-                    priority: { type: "number" },
+                    dimension: { type: "string" as const },
+                    question: { type: "string" as const },
+                    why: { type: "string" as const },
+                    answerType: { type: "string" as const, enum: ["text", "yes_no", "choice"] },
+                    priority: { type: "number" as const },
                   },
-                  required: ["dimension", "question", "why", "answerType", "priority"],
+                  required: ["dimension", "question", "why", "answerType", "priority"] as const,
                 },
               },
             },
-            required: ["aiSummary", "questions"],
+            required: ["aiSummary", "questions"] as const,
           },
         },
       },
