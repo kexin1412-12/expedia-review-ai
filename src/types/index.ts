@@ -1,3 +1,37 @@
+export interface AmenityCategories {
+  accessibility: string[];
+  activitiesNearby: string[];
+  businessServices: string[];
+  conveniences: string[];
+  familyFriendly: string[];
+  foodAndDrink: string[];
+  guestServices: string[];
+  internet: string[];
+  langsSpoken: string[];
+  more: string[];
+  outdoor: string[];
+  parking: string[];
+  spa: string[];
+  thingsToDo: string[];
+}
+
+export interface CheckInInfo {
+  startTime: string | null;
+  endTime: string | null;
+  instructions: string[];
+}
+
+export interface CheckOutInfo {
+  time: string | null;
+  policy: string[];
+}
+
+export interface HotelPolicies {
+  pet: string[];
+  childrenAndExtraBed: string[];
+  knowBeforeYouGo: string[];
+}
+
 export interface HotelRecord {
   id: string;
   name: string;
@@ -10,6 +44,11 @@ export interface HotelRecord {
   areaDescription: string;
   amenities: string[];
   reviewCount: number;
+  popularAmenities: string[];
+  amenityCategories: AmenityCategories;
+  checkIn: CheckInInfo;
+  checkOut: CheckOutInfo;
+  policies: HotelPolicies;
 }
 
 export interface ReviewRecord {

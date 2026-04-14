@@ -2,14 +2,110 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, MapPin, Mic, Send, Sparkles, Star, Wifi, Car, UtensilsCrossed, Dumbbell, Shield, Clock, Globe } from "lucide-react";
-import { FollowUpResponse, HotelRecord, ReviewRecord } from "@/types";
+import { ArrowLeft, MapPin, Mic, Send, Sparkles, Star, Clock, Globe, ChevronDown, ShieldCheck, PawPrint, Baby, AlertTriangle } from "lucide-react";
+import { FollowUpResponse, HotelRecord, ReviewRecord, AmenityCategories } from "@/types";
 import { getHotelImage, getHotelGallery, hotelSubtitle, getAmenityIcon, ratingLabel } from "@/lib/hotel-display";
 import { ReviewCard } from "@/components/review-card";
 import { SiteHeader } from "@/components/site-header";
 import { KnowledgeHealthPanel } from "@/components/knowledge-health-panel";
 
 const fallbackReview = "The room was very clean and the staff were friendly. Check-in was smooth.";
+
+/* ── Amenity category UI labels ── */
+const AMENITY_CATEGORY_LABELS: Record<keyof AmenityCategories, string> = {
+  accessibility: "Accessibility",
+  activitiesNearby: "Nearby Activities",
+  businessServices: "Business Services",
+  conveniences: "Conveniences",
+  familyFriendly: "Family Friendly",
+  foodAndDrink: "Food & Drink",
+  guestServices: "Guest Services",
+  internet: "Internet",
+  langsSpoken: "Languages Spoken",
+  more: "More Amenities",
+  outdoor: "Outdoor",
+  parking: "Parking",
+  spa: "Spa & Wellness",
+  thingsToDo: "Things to Do",
+};
+
+const CATEGORY_ICONS: Record<keyof AmenityCategories, string> = {
+  accessibility: "♿",
+  activitiesNearby: "🎯",
+  businessServices: "💼",
+  conveniences: "🔧",
+  familyFriendly: "👨‍👩‍👧",
+  foodAndDrink: "🍽️",
+  guestServices: "🛎️",
+  internet: "📶",
+  langsSpoken: "🗣️",
+  more: "➕",
+  outdoor: "🌿",
+  parking: "🅿️",
+  spa: "💆",
+  thingsToDo: "🎉",
+};
+
+/* ── Accordion section component ── */
+function AccordionSection({ title, icon, items }: { title: string; icon: string; items: string[] }) {
+  const [open, setOpen] = useState(false);
+  if (items.length === 0) return null;
+  return (
+    <div className="border-b border-slate-100 last:border-0">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center justify-between py-3.5 text-left"
+      >
+        <div className="flex items-center gap-2.5">
+          <span className="text-lg">{icon}</span>
+          <span className="text-sm font-semibold text-slate-800">{title}</span>
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">{items.length}</span>
+        </div>
+        <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="pb-4 pl-9">
+          <div className="flex flex-wrap gap-2">
+            {items.map((item, i) => (
+              <span key={i} className="rounded-lg bg-slate-50 px-3 py-1.5 text-sm text-slate-600">{item}</span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Policy card component ── */
+function PolicyCard({ icon, title, items }: { icon: React.ReactNode; title: string; items: string[] }) {
+  if (items.length === 0) return null;
+
+  function cleanHtml(text: string) {
+    return text.replace(/<\/?[^>]+(>|$)/g, "").trim();
+  }
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5">
+      <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+        {icon}
+        {title}
+      </div>
+      <ul className="mt-3 space-y-2">
+        {items.map((item, i) => {
+          const cleaned = cleanHtml(item);
+          if (!cleaned) return null;
+          return (
+            <li key={i} className="flex items-start gap-2 text-sm text-slate-600">
+              <span className="mt-0.5 text-slate-300">•</span>
+              <span>{cleaned}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
 
 export function HotelDetailClient({ hotel }: { hotel: HotelRecord }) {
   const [reviews, setReviews] = useState<ReviewRecord[]>([]);
@@ -101,99 +197,204 @@ export function HotelDetailClient({ hotel }: { hotel: HotelRecord }) {
           Back to hotels
         </Link>
 
-        <section className="mt-6 grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
-          {/* ── Left: Hotel hero + info ── */}
-          <div className="space-y-6">
-            {/* Image gallery */}
-            <div className="grid grid-cols-4 grid-rows-2 gap-2 overflow-hidden rounded-[26px]" style={{ height: 380 }}>
-              <div className="relative col-span-2 row-span-2">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={getHotelImage(hotel)} alt={hotel.name} className="h-full w-full object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
-                <div className="absolute bottom-5 left-5">
-                  {hotel.starRating && (
-                    <div className="mb-2 flex items-center gap-0.5">
-                      {Array.from({ length: Math.round(hotel.starRating) }).map((_, i) => (
-                        <Star key={i} className="h-4 w-4 fill-amber-400 text-amber-400" />
-                      ))}
-                      <span className="ml-1.5 text-sm font-semibold text-white/90">{hotel.starRating}-star hotel</span>
+        {/* ═══════════ SECTION 1: Property Overview (Hero) ═══════════ */}
+        <section className="mt-6">
+          <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
+            {/* Left: Image gallery */}
+            <div className="space-y-6">
+              <div className="grid grid-cols-4 grid-rows-2 gap-2 overflow-hidden rounded-[26px]" style={{ height: 380 }}>
+                <div className="relative col-span-2 row-span-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={getHotelImage(hotel)} alt={hotel.name} className="h-full w-full object-cover" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                  <div className="absolute bottom-5 left-5">
+                    {hotel.starRating && (
+                      <div className="mb-2 flex items-center gap-0.5">
+                        {Array.from({ length: Math.round(hotel.starRating) }).map((_, i) => (
+                          <Star key={i} className="h-4 w-4 fill-amber-400 text-amber-400" />
+                        ))}
+                        <span className="ml-1.5 text-sm font-semibold text-white/90">{hotel.starRating}-star hotel</span>
+                      </div>
+                    )}
+                    <h1 className="text-3xl font-bold text-white drop-shadow-lg">{hotel.name}</h1>
+                    <div className="mt-1.5 flex items-center gap-1.5 text-white/90">
+                      <MapPin className="h-3.5 w-3.5" />
+                      <span className="text-sm">{hotelSubtitle(hotel)}</span>
                     </div>
-                  )}
-                  <h1 className="text-3xl font-bold text-white drop-shadow-lg">{hotel.name}</h1>
-                  <div className="mt-1.5 flex items-center gap-1.5 text-white/90">
-                    <MapPin className="h-3.5 w-3.5" />
-                    <span className="text-sm">{hotelSubtitle(hotel)}</span>
                   </div>
                 </div>
+                {getHotelGallery(hotel).map((src, i) => (
+                  <div key={i} className="relative overflow-hidden">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={src} alt={`${hotel.name} photo ${i + 2}`} className="h-full w-full object-cover transition hover:scale-105" />
+                  </div>
+                ))}
               </div>
-              {getHotelGallery(hotel).map((src, i) => (
-                <div key={i} className="relative overflow-hidden">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={src} alt={`${hotel.name} photo ${i + 2}`} className="h-full w-full object-cover transition hover:scale-105" />
+
+              {/* Quick stats bar */}
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5">
+                  <span className="text-xl font-bold text-white">{(hotel.rating ?? 8).toFixed(1)}</span>
+                  <div className="border-l border-white/30 pl-2">
+                    <div className="text-sm font-semibold text-white">{ratingLabel(hotel.rating)}</div>
+                    <div className="text-[11px] text-emerald-100">{hotel.reviewCount} reviews</div>
+                  </div>
                 </div>
-              ))}
+                {hotel.popularAmenities.slice(0, 6).map((amenity) => (
+                  <span key={amenity} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-700 shadow-sm">
+                    <span className="text-base">{getAmenityIcon(amenity)}</span>
+                    {amenity}
+                  </span>
+                ))}
+                {hotel.popularAmenities.length > 6 && (
+                  <span className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-medium text-expediaBlue shadow-sm">
+                    +{hotel.popularAmenities.length - 6} more
+                  </span>
+                )}
+              </div>
             </div>
 
-            {/* Quick stats bar */}
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5">
-                <span className="text-xl font-bold text-white">{(hotel.rating ?? 8).toFixed(1)}</span>
-                <div className="border-l border-white/30 pl-2">
-                  <div className="text-sm font-semibold text-white">{ratingLabel(hotel.rating)}</div>
-                  <div className="text-[11px] text-emerald-100">{hotel.reviewCount} reviews</div>
+            {/* Right: About this property */}
+            <div className="rounded-[26px] border border-slate-200 bg-white p-7 shadow-card">
+              <h2 className="text-xl font-bold text-[#0b1638]">About this property</h2>
+              <p className="mt-4 text-[15px] leading-7 text-slate-600">{hotel.description}</p>
+
+              {hotel.areaDescription && (
+                <div className="mt-6 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 p-5">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-expediaBlue">
+                    <Globe className="h-4 w-4" />
+                    Explore the area
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">{hotel.areaDescription}</p>
                 </div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* ═══════════ SECTION 2: Popular Amenities ═══════════ */}
+        {hotel.popularAmenities.length > 0 && (
+          <section className="mt-8">
+            <div className="rounded-[26px] border border-slate-200 bg-white p-7 shadow-card">
+              <h2 className="text-xl font-bold text-[#0b1638]">Popular Amenities</h2>
+              <div className="mt-4 flex flex-wrap gap-2.5">
+                {hotel.popularAmenities.map((amenity) => (
+                  <span
+                    key={amenity}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700"
+                  >
+                    <span className="text-lg">{getAmenityIcon(amenity)}</span>
+                    {amenity}
+                  </span>
+                ))}
               </div>
-              {hotel.amenities.slice(0, 6).map((amenity) => (
-                <span key={amenity} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-700 shadow-sm">
-                  <span className="text-base">{getAmenityIcon(amenity)}</span>
-                  {amenity}
-                </span>
+            </div>
+          </section>
+        )}
+
+        {/* ═══════════ SECTION 3: Amenities by Category (Accordion) ═══════════ */}
+        <section className="mt-6">
+          <div className="rounded-[26px] border border-slate-200 bg-white p-7 shadow-card">
+            <h2 className="text-xl font-bold text-[#0b1638]">Amenities by Category</h2>
+            <div className="mt-4">
+              {(Object.entries(hotel.amenityCategories) as [keyof AmenityCategories, string[]][]).map(([key, items]) => (
+                <AccordionSection
+                  key={key}
+                  title={AMENITY_CATEGORY_LABELS[key]}
+                  icon={CATEGORY_ICONS[key]}
+                  items={items}
+                />
               ))}
-              {hotel.amenities.length > 6 && (
-                <span className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-medium text-expediaBlue shadow-sm">
-                  +{hotel.amenities.length - 6} more
-                </span>
+            </div>
+          </div>
+        </section>
+
+        {/* ═══════════ SECTION 4 & 5: Check-in/out + Policies (side by side) ═══════════ */}
+        <section className="mt-6 grid gap-6 lg:grid-cols-2">
+          {/* Check-in & Check-out */}
+          <div className="rounded-[26px] border border-slate-200 bg-white p-7 shadow-card">
+            <h2 className="flex items-center gap-2 text-xl font-bold text-[#0b1638]">
+              <Clock className="h-5 w-5 text-expediaBlue" />
+              Check-in & Check-out
+            </h2>
+            <div className="mt-5 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                {hotel.checkIn.startTime && (
+                  <div className="rounded-xl bg-blue-50 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-blue-600">Check-in window</div>
+                    <div className="mt-1.5 text-lg font-bold text-slate-800">
+                      {hotel.checkIn.startTime}{hotel.checkIn.endTime ? ` – ${hotel.checkIn.endTime}` : ""}
+                    </div>
+                  </div>
+                )}
+                {hotel.checkOut.time && (
+                  <div className="rounded-xl bg-amber-50 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-amber-600">Check-out</div>
+                    <div className="mt-1.5 text-lg font-bold text-slate-800">{hotel.checkOut.time}</div>
+                  </div>
+                )}
+              </div>
+
+              {hotel.checkIn.instructions.length > 0 && (
+                <div>
+                  <div className="text-sm font-semibold text-slate-700">Instructions</div>
+                  <ul className="mt-2 space-y-1.5">
+                    {hotel.checkIn.instructions.map((inst, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm text-slate-600">
+                        <span className="mt-0.5 text-slate-300">•</span>
+                        <span>{inst}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {hotel.checkOut.policy.length > 0 && (
+                <div>
+                  <div className="text-sm font-semibold text-slate-700">Check-out policy</div>
+                  <ul className="mt-2 space-y-1.5">
+                    {hotel.checkOut.policy.map((p, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm text-slate-600">
+                        <span className="mt-0.5 text-slate-300">•</span>
+                        <span>{p}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </div>
           </div>
 
-          {/* ── Right: About this property ── */}
-          <div className="rounded-[26px] border border-slate-200 bg-white p-7 shadow-card">
-            <h2 className="text-xl font-bold text-[#0b1638]">About this property</h2>
-            <p className="mt-4 text-[15px] leading-7 text-slate-600">{hotel.description}</p>
-
-            {hotel.areaDescription && (
-              <div className="mt-6 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 p-5">
-                <div className="flex items-center gap-2 text-sm font-semibold text-expediaBlue">
-                  <Globe className="h-4 w-4" />
-                  Explore the area
-                </div>
-                <p className="mt-2 text-sm leading-6 text-slate-600">{hotel.areaDescription}</p>
-              </div>
-            )}
-
-            {/* All amenities grid */}
-            {hotel.amenities.length > 6 && (
-              <div className="mt-6">
-                <h3 className="text-sm font-semibold text-slate-800">All amenities</h3>
-                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {hotel.amenities.map((amenity) => (
-                    <div key={amenity} className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                      <span>{getAmenityIcon(amenity)}</span>
-                      {amenity}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+          {/* Policies */}
+          <div className="space-y-4">
+            <h2 className="flex items-center gap-2 text-xl font-bold text-[#0b1638]">
+              <ShieldCheck className="h-5 w-5 text-expediaBlue" />
+              Policies
+            </h2>
+            <PolicyCard
+              icon={<PawPrint className="h-4 w-4 text-slate-500" />}
+              title="Pet Policy"
+              items={hotel.policies.pet}
+            />
+            <PolicyCard
+              icon={<Baby className="h-4 w-4 text-slate-500" />}
+              title="Children & Extra Bed Policy"
+              items={hotel.policies.childrenAndExtraBed}
+            />
+            <PolicyCard
+              icon={<AlertTriangle className="h-4 w-4 text-slate-500" />}
+              title="Know Before You Go"
+              items={hotel.policies.knowBeforeYouGo}
+            />
           </div>
         </section>
 
-        {/* ── Property Knowledge Health ── */}
+        {/* ═══════════ SECTION 6: Property Knowledge Health ═══════════ */}
         <section className="mt-8">
           <KnowledgeHealthPanel hotelId={hotel.id} />
         </section>
 
+        {/* ═══════════ Reviews + Write Review ═══════════ */}
         <section className="mt-10 grid gap-8 lg:grid-cols-[0.95fr_1.05fr]">
           <div>
             <div className="mb-4 flex items-center justify-between">
