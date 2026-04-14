@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, CheckCircle2, MapPin, Mic, Send, Sparkles, Star, Wifi, Car, UtensilsCrossed, Dumbbell, Shield, Clock, Globe } from "lucide-react";
-import { FollowUpResponse, HotelRecord, HotelSummaryResponse, ReviewRecord } from "@/types";
+import { ArrowLeft, MapPin, Mic, Send, Sparkles, Star, Wifi, Car, UtensilsCrossed, Dumbbell, Shield, Clock, Globe } from "lucide-react";
+import { FollowUpResponse, HotelRecord, ReviewRecord } from "@/types";
 import { getHotelImage, getHotelGallery, hotelSubtitle, getAmenityIcon, ratingLabel } from "@/lib/hotel-display";
 import { ReviewCard } from "@/components/review-card";
 import { SiteHeader } from "@/components/site-header";
@@ -13,7 +13,6 @@ const fallbackReview = "The room was very clean and the staff were friendly. Che
 
 export function HotelDetailClient({ hotel }: { hotel: HotelRecord }) {
   const [reviews, setReviews] = useState<ReviewRecord[]>([]);
-  const [summary, setSummary] = useState<HotelSummaryResponse | null>(null);
   const [draftReview, setDraftReview] = useState(fallbackReview);
   const [followUp, setFollowUp] = useState<FollowUpResponse | null>(null);
   const [selectedReply, setSelectedReply] = useState("");
@@ -24,15 +23,9 @@ export function HotelDetailClient({ hotel }: { hotel: HotelRecord }) {
 
   useEffect(() => {
     async function loadHotelContext() {
-      const [reviewsRes, summaryRes] = await Promise.all([
-        fetch(`/api/hotels/${hotel.id}/reviews`),
-        fetch(`/api/hotels/${hotel.id}/summary`),
-      ]);
-
+      const reviewsRes = await fetch(`/api/hotels/${hotel.id}/reviews`);
       const reviewsJson = await reviewsRes.json();
-      const summaryJson = await summaryRes.json();
       setReviews(reviewsJson.reviews ?? []);
-      setSummary(summaryJson);
       setSelectedReply("");
       setExtraDetails("");
       setVoiceText("");
@@ -162,51 +155,37 @@ export function HotelDetailClient({ hotel }: { hotel: HotelRecord }) {
                 </span>
               )}
             </div>
-
-            {/* Property info card */}
-            <div className="rounded-[26px] border border-slate-200 bg-white p-7 shadow-card">
-              <h2 className="text-xl font-bold text-[#0b1638]">About this property</h2>
-              <p className="mt-4 text-[15px] leading-7 text-slate-600">{hotel.description}</p>
-
-              {hotel.areaDescription && (
-                <div className="mt-6 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 p-5">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-expediaBlue">
-                    <Globe className="h-4 w-4" />
-                    Explore the area
-                  </div>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">{hotel.areaDescription}</p>
-                </div>
-              )}
-
-              {/* All amenities grid */}
-              {hotel.amenities.length > 6 && (
-                <div className="mt-6">
-                  <h3 className="text-sm font-semibold text-slate-800">All amenities</h3>
-                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                    {hotel.amenities.map((amenity) => (
-                      <div key={amenity} className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                        <span>{getAmenityIcon(amenity)}</span>
-                        {amenity}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
           </div>
 
-          <div className="rounded-[30px] border border-slate-200 bg-white p-8 shadow-card">
-            <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">What guests are saying</div>
-            <h2 className="mt-2 text-2xl font-semibold text-slate-900">AI guest snapshot</h2>
-            <p className="mt-4 text-[15px] leading-7 text-slate-700">{summary?.summary ?? "Loading a concise guest snapshot..."}</p>
-            <div className="mt-5 space-y-3">
-              {(summary?.highlights ?? []).map((item) => (
-                <div key={item} className="flex items-start gap-3 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                  <span>{item}</span>
+          {/* ── Right: About this property ── */}
+          <div className="rounded-[26px] border border-slate-200 bg-white p-7 shadow-card">
+            <h2 className="text-xl font-bold text-[#0b1638]">About this property</h2>
+            <p className="mt-4 text-[15px] leading-7 text-slate-600">{hotel.description}</p>
+
+            {hotel.areaDescription && (
+              <div className="mt-6 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 p-5">
+                <div className="flex items-center gap-2 text-sm font-semibold text-expediaBlue">
+                  <Globe className="h-4 w-4" />
+                  Explore the area
                 </div>
-              ))}
-            </div>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{hotel.areaDescription}</p>
+              </div>
+            )}
+
+            {/* All amenities grid */}
+            {hotel.amenities.length > 6 && (
+              <div className="mt-6">
+                <h3 className="text-sm font-semibold text-slate-800">All amenities</h3>
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {hotel.amenities.map((amenity) => (
+                    <div key={amenity} className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                      <span>{getAmenityIcon(amenity)}</span>
+                      {amenity}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </section>
 
