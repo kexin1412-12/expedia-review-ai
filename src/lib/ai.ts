@@ -5,6 +5,35 @@ import { detectTopicMention, MentionDepth } from "./followupGuards";
 import { decideFollowupMode, FollowupMode } from "./followupMode";
 import { postCheckFollowup } from "./followupPostCheck";
 
+/* ── Intelligent topic selection ── */
+
+const TOPIC_PRIORITY: string[] = [
+  "breakfast", "service", "cleanliness", "wifi", "noise",
+  "room_condition", "pool", "parking", "location", "amenities",
+  "check_in", "check_out", "safety", "family_friendly", "pet_friendly",
+];
+
+function selectBestTopic(draftReview: string, answeredTopics?: string[]): string | null {
+  const answeredSet = new Set(answeredTopics || []);
+
+  // First pass: find topics NOT mentioned at all
+  for (const topic of TOPIC_PRIORITY) {
+    if (answeredSet.has(topic)) continue;
+    const depth = detectTopicMention(draftReview, topic);
+    if (depth === "not_mentioned") return topic;
+  }
+
+  // Second pass: find topics mentioned only shallowly (candidate for clarification)
+  for (const topic of TOPIC_PRIORITY) {
+    if (answeredSet.has(topic)) continue;
+    const depth = detectTopicMention(draftReview, topic);
+    if (depth === "shallow") return topic;
+  }
+
+  // All topics either detailed or answered
+  return null;
+}
+
 function getClient() {
   const apiKey = process.env.OPENAI_API_KEY;
   console.log("[getClient] API Key exists:", !!apiKey, "Length:", apiKey?.length);
@@ -78,7 +107,15 @@ export async function generateFollowUp(
   focusDimension?: string,
   answeredTopics?: string[],
 ): Promise<(FollowUpResponse & { mentionDepth: MentionDepth; mode: FollowupMode }) | null> {
-  const topic = focusDimension || "breakfast";
+  // ── Topic selection: hard-filter covered topics, pick best uncovered ──
+  let topic: string;
+  if (focusDimension) {
+    topic = focusDimension;
+  } else {
+    const selected = selectBestTopic(draftReview, answeredTopics);
+    if (!selected) return null;
+    topic = selected;
+  }
 
   // ── Layer 1: Local guard — detect mention depth ──
   const mentionDepth = detectTopicMention(draftReview, topic);
@@ -92,17 +129,22 @@ export async function generateFollowUp(
   const client = getClient();
   const sampleReviews = reviews.slice(0, 18).map((review) => review.text).filter(Boolean);
 
+  const topicLabel = topic.replace(/_/g, " ");
   const fallbackQuestion = mode === "clarify_question"
-    ? `What specifically about the ${topic.replace(/_/g, " ")} stood out to you?`
-    : `Did you try the ${topic.replace(/_/g, " ")} during your stay?`;
+    ? `What specifically about the ${topicLabel} stood out to you?`
+    : `How was the ${topicLabel} during your stay?`;
+
+  const fallbackRationale = mode === "clarify_question"
+    ? `You mentioned ${topicLabel} — one more detail would help future guests.`
+    : `${topicLabel} hasn't been covered in your review yet.`;
 
   const fallback: FollowUpResponse & { mentionDepth: MentionDepth; mode: FollowupMode } = {
     topic,
     question: fallbackQuestion,
-    rationale: `${topic} feedback helps future guests make informed decisions.`,
+    rationale: fallbackRationale,
     quickReplies: mode === "clarify_question"
       ? ["Limited options", "Quality issues", "It was fine", "Other"]
-      : ["Great", "Okay", "Poor", "Not sure"],
+      : ["Fresh and varied", "Basic but okay", "Not worth it", "Didn't have it"],
     mentionDepth,
     mode,
   };
@@ -132,8 +174,9 @@ INPUTS
 STRICT RULES
 1. If mode is "basic_question":
    - The user has NOT mentioned this topic at all
-   - Ask a short first-time question about the topic
-   - Example for breakfast: "Did you try the breakfast during your stay?"
+   - Ask a natural first-time question about the topic
+   - NEVER start with "Did you try" or "Did you use"
+   - Example for breakfast: "How was the breakfast during your stay?"
 
 2. If mode is "clarify_question":
    - The user has already mentioned this topic with a shallow opinion

@@ -23,6 +23,10 @@ export async function POST(req: NextRequest) {
       currentReviewText,
     });
 
+    if (!result) {
+      return NextResponse.json({ skip: true, reason: "Topic already covered in detail." });
+    }
+
     return NextResponse.json(result);
   } catch {
     return NextResponse.json(

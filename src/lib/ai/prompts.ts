@@ -11,23 +11,39 @@ export function buildGapDetectionPrompt(params: {
   return `
 You are an AI assistant helping improve hotel review quality.
 
-Your task is to identify the single most important information gap for a specific hotel.
+Your task is to identify the single most useful follow-up topic for a hotel review.
 
 You are given:
 1. Property context
 2. Candidate topic gaps derived from structured review coverage signals
 3. The user's current review draft
-4. Topics already covered in the current draft
+4. Topics already detected as covered in the current draft
 
-Goal:
-Select ONE topic that:
-- is NOT already covered in the user's draft
-- is under-covered or stale in recent reviews
-- would be valuable for future guests
+IMPORTANT:
+You must first determine which candidate topics are already explicitly or implicitly mentioned in the user's draft.
 
-Rules:
-- Do not pick a topic already covered in the current review
-- Prefer missing or stale topics over already well-covered topics
+A topic counts as already mentioned if the user:
+- gives an opinion about it
+- describes an experience with it
+- complains about it
+- praises it
+- implies they used it
+
+Examples:
+- "the parking is not good" => parking is already covered
+- "wifi was slow" => wifi is already covered
+- "breakfast had limited options" => breakfast is already covered
+
+Your job:
+Step 1: Identify which candidate topics are already covered in the user's draft
+Step 2: Exclude those topics completely
+Step 3: From the remaining candidates, choose ONE topic that is under-covered, stale, or valuable for future guests
+Step 4: If no good topic remains, return null
+
+STRICT RULES:
+- NEVER select a topic that is already covered in the user's current review
+- Treat explicit opinions as coverage
+- Prefer missing or stale topics over well-covered ones
 - Return valid JSON only
 - Be concise
 
@@ -35,9 +51,9 @@ Property context:
 ${JSON.stringify(property, null, 2)}
 
 Current review draft:
-${currentReviewText}
+"${currentReviewText}"
 
-Covered topics in current draft:
+Pre-detected covered topics:
 ${JSON.stringify(coveredTopics)}
 
 Candidate topic gaps:
@@ -46,8 +62,9 @@ ${JSON.stringify(candidates, null, 2)}
 Return ONLY JSON:
 {
   "selected_topic": "breakfast",
-  "reason": "Breakfast has low recent coverage and is not covered in the user's review.",
-  "confidence": 0.86
+  "reason": "Breakfast is not covered in the user's review and has low recent coverage.",
+  "confidence": 0.86,
+  "excluded_topics": ["parking"]
 }
 `;
 }
@@ -56,34 +73,85 @@ export function buildFollowUpPrompt(params: {
   selectedTopic: ReviewTopic;
   reason: string;
   currentReviewText: string;
+  mentionDepth: "not_mentioned" | "shallow" | "detailed";
+  mode: "basic_question" | "clarify_question" | "none";
 }) {
-  const { selectedTopic, reason, currentReviewText } = params;
+  const { selectedTopic, reason, currentReviewText, mentionDepth, mode } = params;
 
   return `
-You are generating one short follow-up question for a hotel review flow.
+You are generating one personalized follow-up question for a hotel review flow.
 
 Context:
 - Selected topic: ${selectedTopic}
-- Reason: ${reason}
-- User's current review: ${currentReviewText}
+- Reason this topic was chosen: ${reason}
+- User's current review: "${currentReviewText}"
+- Mention depth for this topic: ${mentionDepth}
+- Required mode: ${mode}
 
-Goal:
-Generate ONE short, natural question that:
-- is easy to answer
-- does not repeat what the user already wrote
-- feels helpful, not like a survey
-- can be answered by quick reply, text, or voice
+STRICT RULES:
 
-Rules:
-- Maximum 15 words
-- Ask exactly one question
-- Return valid JSON only
-- Also return 4 concise quick replies suitable for the topic
+1. If mode = "none"
+Return exactly:
+{ "question": null, "quick_replies": [] }
+
+2. If mode = "basic_question"
+- The topic has NOT been mentioned yet
+- Ask a natural first-time question
+- Keep it short and easy to answer
+- NEVER start with "Did you try", "Did you use", "Did you notice"
+
+3. If mode = "clarify_question"
+- The user has ALREADY mentioned this topic
+- You MUST NOT ask:
+  - "Did you try..."
+  - "Did you use..."
+  - "Did you notice..."
+  - any yes/no confirmation question
+- Ask for a specific detail instead
+
+4. If the user already expressed an opinion, assume they experienced the topic
+
+5. Maximum 14 words
+6. Return valid JSON only
+
+7. Quick replies rules:
+- Generate exactly 4 quick reply options
+- Each reply must be specific and descriptive (NOT generic words like "Great", "Okay", "Poor")
+- Replies should reflect realistic guest experiences for the topic
+- Replies should be 2-5 words each
+
+GOOD EXAMPLES:
+User: "the breakfast is not good"
+Topic: breakfast
+Mode: clarify_question
+Return:
+{
+  "question": "What specifically was not good about the breakfast?",
+  "quick_replies": ["Limited options", "Cold food", "Poor quality", "Long wait"]
+}
+
+User: "nice hotel"
+Topic: breakfast
+Mode: basic_question
+Return:
+{
+  "question": "How was the breakfast during your stay?",
+  "quick_replies": ["Fresh and varied", "Basic but okay", "Not worth it", "Didn't have it"]
+}
+
+User: "the wifi was slow and kept disconnecting"
+Topic: wifi
+Mode: none
+Return:
+{
+  "question": null,
+  "quick_replies": []
+}
 
 Return ONLY JSON:
 {
-  "question": "Did you try the breakfast during your stay?",
-  "quick_replies": ["Great", "Okay", "Poor", "Didn't try it"]
+  "question": "...",
+  "quick_replies": ["...", "...", "...", "..."]
 }
 `;
 }

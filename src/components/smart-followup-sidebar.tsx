@@ -351,7 +351,11 @@ export function SmartFollowupSidebar({
         </p>
         {followUpData.rationale && (
           <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
-            {followUpData.rationale}
+            {followUpData.mode === "clarify_question"
+              ? `You mentioned ${followUpData.topic?.replace(/_/g, " ")} — one more detail would help future guests.`
+              : followUpData.mode === "basic_question"
+              ? `${followUpData.topic?.replace(/_/g, " ")} hasn't been covered in your review yet.`
+              : followUpData.rationale}
           </p>
         )}
       </div>

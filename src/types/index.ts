@@ -65,6 +65,8 @@ export interface FollowUpResponse {
   question: string;
   rationale: string;
   quickReplies: string[];
+  mentionDepth?: "not_mentioned" | "shallow" | "detailed";
+  mode?: "basic_question" | "clarify_question" | "none";
 }
 
 export interface HotelSummaryResponse {

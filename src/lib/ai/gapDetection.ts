@@ -125,13 +125,20 @@ export async function detectBestGap(params: {
   const { property, reviews, currentReviewText } = params;
   const now = new Date();
 
+  // ── Hard-filter: keyword-based topic extraction BEFORE LLM ──
   const coveredTopics = extractTopicsFromText(currentReviewText);
-  const candidates = buildCandidates(reviews, coveredTopics, now).slice(0, 5);
+
+  // buildCandidates already excludes coveredTopics, but we do a second
+  // explicit exclusion pass to guarantee no covered topic leaks through
+  const rawCandidates = buildCandidates(reviews, coveredTopics, now);
+  const candidates = rawCandidates
+    .filter((c) => !coveredTopics.includes(c.topic))
+    .slice(0, 5);
 
   if (candidates.length === 0) {
     return {
       selected_topic: null,
-      reason: "No additional high-value follow-up needed.",
+      reason: "No uncovered high-value topic remains.",
       confidence: 0.9,
       covered_topics: coveredTopics,
       candidates: [],
