@@ -9,6 +9,7 @@ import { Sparkles, CheckCircle2, Mic, MicOff } from "lucide-react";
 export interface ReviewCompositionSectionProps {
   hotel: HotelRecord;
   existingReviews: ReviewRecord[];
+  prefillQuestion?: { question: string; dimension: string } | null;
   onReviewSubmit?: (review: {
     title?: string;
     text: string;
@@ -19,6 +20,7 @@ export interface ReviewCompositionSectionProps {
 export function ReviewCompositionSection({
   hotel,
   existingReviews,
+  prefillQuestion,
   onReviewSubmit,
 }: ReviewCompositionSectionProps) {
   const [draftReview, setDraftReview] = useState("");
@@ -79,10 +81,12 @@ export function ReviewCompositionSection({
 
   // Fetch follow-up when draft changes (debounced)
   const fetchFollowUp = useCallback(
-    async (review: string) => {
+    async (review: string, focusDimension?: string) => {
       if (!review.trim() || review.trim().length < 15) {
-        setFollowUpData(null);
-        return;
+        if (!focusDimension) {
+          setFollowUpData(null);
+          return;
+        }
       }
 
       setIsLoadingFollowUp(true);
@@ -90,7 +94,7 @@ export function ReviewCompositionSection({
         const response = await fetch(`/api/hotels/${hotel.id}/follow-up`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ draftReview: review }),
+          body: JSON.stringify({ draftReview: review, focusDimension }),
         });
 
         if (!response.ok) throw new Error("Failed to fetch follow-up");
@@ -124,6 +128,17 @@ export function ReviewCompositionSection({
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, []);
+
+  // Handle prefilled question from Knowledge Health panel
+  useEffect(() => {
+    if (prefillQuestion) {
+      const prompt = `[Regarding ${prefillQuestion.dimension}] `;
+      setDraftReview(prompt);
+      // Trigger follow-up fetch with the dimension context
+      fetchFollowUp(prompt, prefillQuestion.dimension);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillQuestion]);
 
   const toggleVoice = useCallback(() => {
     if (!recognitionRef.current) return;

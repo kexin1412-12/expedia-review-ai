@@ -9,6 +9,7 @@ import type {
   ReviewDimensionTag,
   KnowledgeHealthResponse,
   SuggestedQuestion,
+  TopicVolatility,
 } from "@/types";
 import { discoverDimensions, tagReviewsDimensions, refineHealthWithAI } from "./ai";
 
@@ -48,6 +49,26 @@ function includesAnyKeyword(text: string, keywords: string[]): boolean {
 /* ====================================
    Parsed reviews
    ==================================== */
+
+/** Generic / template phrases that carry no real information */
+const GENERIC_PATTERNS = [
+  /^(good|great|nice|ok|okay|fine|bad|terrible|awful|excellent|amazing|perfect|worst|best)[\.!]*$/i,
+  /^(loved it|hated it|not bad|very good|very bad|highly recommend|do not recommend)[\.!]*$/i,
+  /^n\/a$/i,
+  /^(no comment|nothing|none|\.+|-+)$/i,
+];
+
+function isGenericText(text: string): boolean {
+  const trimmed = text.trim();
+  return GENERIC_PATTERNS.some((pattern) => pattern.test(trimmed));
+}
+
+/** A review is "valid" (information-dense) if it has substantive content */
+function isValidReview(pr: ParsedReview): boolean {
+  const text = pr.fullText.trim();
+  // Must be > 20 chars and not a generic one-liner
+  return text.length > 20 && !isGenericText(text);
+}
 
 interface ParsedReview {
   index: number;
@@ -119,17 +140,46 @@ function inferTrend(timeline: TimelineEntry[]): TrendDirection {
   return "stable";
 }
 
+/* ====================================
+   Topic volatility — not all info decays at the same rate
+   ==================================== */
+
+const STATIC_KEYWORDS = [
+  "location", "neighborhood", "neighbourhood", "nearby", "area",
+  "surroundings", "layout", "attractions", "distance", "transport",
+  "convenience_of_location", "convenienceoflocation",
+];
+
+/** Classify a dimension key/label as dynamic or static */
+function classifyVolatility(key: string, label: string): TopicVolatility {
+  const lower = `${key} ${label}`.toLowerCase();
+  if (STATIC_KEYWORDS.some((kw) => lower.includes(kw))) return "static";
+  return "dynamic";
+}
+
 function summarizeStatus(args: {
   totalMentions: number;
   recentMentions30d: number;
   staleDays: number | null;
   negativeShare: number;
   staleAfterDays: number;
+  volatility: TopicVolatility;
 }): { status: HealthStatus; refreshReason: string } {
-  const { totalMentions, recentMentions30d, staleDays, negativeShare, staleAfterDays } = args;
+  const { totalMentions, recentMentions30d, staleDays, negativeShare, staleAfterDays, volatility } = args;
 
   if (totalMentions === 0)
     return { status: "unknown", refreshReason: "No review evidence found for this dimension." };
+
+  // Static topics (location, neighborhood, etc.) don't need frequent updates
+  if (volatility === "static") {
+    if (negativeShare >= 0.45 && recentMentions30d > 0)
+      return { status: "risk", refreshReason: "Recent mentions skew negative — unusual for a stable attribute." };
+    if (totalMentions >= 2)
+      return { status: "stable", refreshReason: "This attribute rarely changes and has consistent coverage across reviews." };
+    return { status: "stable", refreshReason: "Low change risk — this attribute is unlikely to vary over time." };
+  }
+
+  // Dynamic topics — original time-sensitive logic
   if (negativeShare >= 0.45 && recentMentions30d > 0)
     return { status: "risk", refreshReason: "Recent mentions skew negative and should be refreshed with current guest feedback." };
   if (recentMentions30d >= 4)
@@ -137,6 +187,45 @@ function summarizeStatus(args: {
   if ((staleDays ?? 999) > staleAfterDays || recentMentions30d === 0)
     return { status: "fading", refreshReason: "This topic appears stale because recent mentions are missing." };
   return { status: "stable", refreshReason: "There is some recent coverage, but not enough to be highly confident." };
+}
+
+/* ====================================
+   Gap score — coverage + recency + volatility
+   ==================================== */
+
+function computeGapScore(args: {
+  mentions: number;
+  validReviewCount: number;
+  staleDays: number | null;
+  volatility: TopicVolatility;
+  recencyThresholdDays?: number;
+}): number {
+  const { mentions, validReviewCount, staleDays, volatility, recencyThresholdDays = 30 } = args;
+
+  // 1. Coverage: mentions / valid reviews
+  const coverage = validReviewCount > 0 ? Math.min(mentions / validReviewCount, 1) : 0;
+
+  // 2. Recency decay: how stale is the last mention
+  const recencyScore = staleDays !== null
+    ? Math.min(staleDays / recencyThresholdDays, 1)
+    : 1; // no mention at all = fully stale
+
+  // 3. Volatility weight
+  const volatilityWeight = volatility === "dynamic" ? 1.0 : 0.2;
+
+  // Weighted gap score
+  const gapScore =
+    (1 - coverage) * 0.4 +
+    recencyScore * 0.4 +
+    volatilityWeight * 0.2;
+
+  return Math.round(Math.min(gapScore, 1) * 100) / 100;
+}
+
+/** Should we ask a follow-up for this dimension? */
+function shouldAskDimension(gapScore: number, volatility: TopicVolatility): boolean {
+  if (volatility === "static") return false;
+  return gapScore > 0.6;
 }
 
 /* ====================================
@@ -148,6 +237,7 @@ function analyzeDimension(
   parsed: ParsedReview[],
   tags: ReviewDimensionTag[],
   now: Date,
+  validReviewCount: number,
 ): DimensionHealth {
 
   const taggedIndices = new Set<number>();
@@ -195,6 +285,16 @@ function analyzeDimension(
   }).length;
   const negativeShare = relevantReviews.length > 0 ? negativeCount / relevantReviews.length : 0;
 
+  const volatility = classifyVolatility(dim.key, dim.label);
+
+  // Compute gap score
+  const gapScore = computeGapScore({
+    mentions: relevantReviews.length,
+    validReviewCount,
+    staleDays,
+    volatility,
+  });
+
     const timeline = buildTimeline(parsed, dim.keywords, taggedIndices, negativeIndices, now);
   const trend = inferTrend(timeline);
   const { status, refreshReason } = summarizeStatus({
@@ -203,6 +303,7 @@ function analyzeDimension(
     staleDays,
     negativeShare,
     staleAfterDays: dim.staleAfterDays,
+    volatility,
   });
 
   const confidenceBase =
@@ -218,23 +319,35 @@ function analyzeDimension(
   if (recentReviews30d.length === 0) score += 0.2;
   score = Math.round(Math.min(score, 1.5) * 100) / 100;
 
-  const summary =
-    relevantReviews.length === 0
-      ? `Guests rarely mention ${dim.label.toLowerCase()}, so the system lacks signal.`
-      : recentReviews30d.length === 0
-        ? `${dim.label} is mentioned historically, but not in recent reviews.`
-        : negativeShare >= 0.45
-          ? `Recent ${dim.label.toLowerCase()} mentions show mixed or negative signals.`
-          : `Recent guest feedback provides usable signal for ${dim.label.toLowerCase()}.`;
+  const summary = (() => {
+    if (relevantReviews.length === 0)
+      return `No guest feedback found for ${dim.label.toLowerCase()}.`;
+    if (volatility === "static")
+      return `${dim.label} is a stable attribute — consistent across reviews and unlikely to change.`;
+    if (negativeShare >= 0.45 && recentReviews30d.length > 0)
+      return `Recent ${dim.label.toLowerCase()} feedback skews negative (${Math.round(negativeShare * 100)}% mixed/negative).`;
+    if (recentReviews30d.length >= 4)
+      return `${dim.label} has strong recent coverage with ${recentReviews30d.length} mentions in the last 30 days.`;
+    if (recentReviews30d.length > 0)
+      return `${dim.label} has some recent signal (${recentReviews30d.length} mention${recentReviews30d.length > 1 ? "s" : ""} in 30d), but could use more.`;
+    // No recent mentions — vary the message based on total count and avg rating
+    const ratingNote = avgRating !== null ? ` (avg ${avgRating}/5)` : "";
+    if (relevantReviews.length >= 10)
+      return `${relevantReviews.length} historical mentions${ratingNote}, but none in recent reviews.`;
+    return `Only ${relevantReviews.length} mention${relevantReviews.length > 1 ? "s" : ""} found${ratingNote} — limited signal overall.`;
+  })();
 
   return {
     dimension: dim.key,
     label: dim.label,
     status,
+    volatility,
     trend,
     confidence,
     score,
+    gapScore,
     totalMentions: relevantReviews.length,
+    validMentions: relevantReviews.filter((pr) => isValidReview(pr)).length,
     recentMentions30d: recentReviews30d.length,
     staleDays,
     negativeShare: Math.round(negativeShare * 100) / 100,
@@ -257,7 +370,7 @@ function buildFallbackQuestions(
 ): SuggestedQuestion[] {
   const dimMap = new Map(dims.map((d) => [d.key, d]));
   return [...cards]
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => b.gapScore - a.gapScore)
     .slice(0, max)
     .map((card, idx) => {
       const dim = dimMap.get(card.dimension);
@@ -295,9 +408,12 @@ export async function computeKnowledgeHealth(
     ? new Date(Math.max(...allDates.map((d) => d.getTime())))
     : new Date();
 
+  // Count valid (information-dense) reviews
+  const validReviewCount = parsed.filter((pr) => isValidReview(pr)).length;
+
   // Step 3: Compute signals per dimension
   const dimensions = discoveredDims.map((dim) =>
-    analyzeDimension(dim, parsed, reviewTags, now),
+    analyzeDimension(dim, parsed, reviewTags, now, validReviewCount),
   );
 
   const statusWeights: Record<HealthStatus, number> = {
@@ -308,7 +424,13 @@ export async function computeKnowledgeHealth(
   );
 
   const maxQuestions = 2;
-  const fallbackQuestions = buildFallbackQuestions(dimensions, discoveredDims, maxQuestions);
+  // Only generate questions for dimensions where shouldAsk returns true
+  const askableDimensions = dimensions.filter((d) => shouldAskDimension(d.gapScore, d.volatility));
+  const fallbackQuestions = buildFallbackQuestions(
+    askableDimensions.length > 0 ? askableDimensions : dimensions,
+    discoveredDims,
+    maxQuestions,
+  );
 
   // Step 3b: AI refines questions
   const aiResult = await refineHealthWithAI({

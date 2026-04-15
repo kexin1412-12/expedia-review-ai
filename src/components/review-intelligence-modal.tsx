@@ -59,7 +59,7 @@ const TOPIC_ICONS: Record<string, React.ReactNode> = {
 
 const STATUS_CHIP: Record<string, { label: string; bg: string; text: string }> = {
   strong_signal: { label: "Well Covered",      bg: "bg-emerald-50",  text: "text-emerald-700" },
-  stable:        { label: "Medium Coverage",    bg: "bg-sky-50",      text: "text-sky-700" },
+  stable:        { label: "Stable",             bg: "bg-sky-50",      text: "text-sky-700" },
   fading:        { label: "Needs Refresh",      bg: "bg-amber-50",    text: "text-amber-700" },
   risk:          { label: "Stale",              bg: "bg-red-50",      text: "text-red-700" },
   unknown:       { label: "Uncertain",          bg: "bg-slate-100",   text: "text-slate-500" },
@@ -164,14 +164,21 @@ function TopicChip({ dim }: { dim: DimensionHealth }) {
   const topic = topicFromDimension(dim);
   const cfg = STATUS_CHIP[dim.status] ?? STATUS_CHIP.unknown;
   const icon = getTopicIcon(topic);
+  const isStatic = dim.volatility === "static";
+  const chipLabel = isStatic && dim.status === "stable" ? "Low Change Risk" : cfg.label;
   return (
     <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-white px-3.5 py-2.5 transition hover:shadow-sm">
       <div className="flex items-center gap-2.5">
         <span className="text-slate-500">{icon}</span>
-        <span className="text-sm font-medium capitalize text-slate-700">{topic}</span>
+        <div>
+          <span className="text-sm font-medium capitalize text-slate-700">{topic}</span>
+          {isStatic && (
+            <span className="ml-2 text-[10px] text-slate-400">Consistent over time</span>
+          )}
+        </div>
       </div>
       <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${cfg.bg} ${cfg.text}`}>
-        {cfg.label}
+        {chipLabel}
       </span>
     </div>
   );

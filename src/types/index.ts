@@ -108,14 +108,19 @@ export interface TimelineEntry {
   negativeMentions: number;
 }
 
+export type TopicVolatility = "dynamic" | "static";
+
 export interface DimensionHealth {
   dimension: string;
   label: string;
   status: HealthStatus;
+  volatility: TopicVolatility;
   trend: TrendDirection;
   confidence: number;
   score: number;
+  gapScore: number;
   totalMentions: number;
+  validMentions: number;
   recentMentions30d: number;
   staleDays: number | null;
   negativeShare: number;

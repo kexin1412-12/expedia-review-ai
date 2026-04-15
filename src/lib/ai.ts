@@ -68,20 +68,28 @@ Return valid JSON only in this format:
   }
 }
 
-export async function generateFollowUp(hotel: HotelRecord, reviews: ReviewRecord[], draftReview: string) {
+export async function generateFollowUp(hotel: HotelRecord, reviews: ReviewRecord[], draftReview: string, focusDimension?: string) {
   const client = getClient();
   const sampleReviews = reviews.slice(0, 18).map((review) => review.text).filter(Boolean);
 
   const fallback = {
-    topic: "breakfast",
-    question: "Did you try the breakfast during your stay?",
-    rationale: "Breakfast is useful for future guests and is not yet covered in your review.",
-    quickReplies: ["Great", "Okay", "Poor", "Didn't try it"],
+    topic: focusDimension || "breakfast",
+    question: focusDimension
+      ? `How was the ${focusDimension.toLowerCase()} during your stay?`
+      : "Did you try the breakfast during your stay?",
+    rationale: focusDimension
+      ? `${focusDimension} feedback helps future guests make informed decisions.`
+      : "Breakfast is useful for future guests and is not yet covered in your review.",
+    quickReplies: ["Great", "Okay", "Poor", "Not sure"],
   };
 
   if (!client || sampleReviews.length === 0) {
     return fallback;
   }
+
+  const focusInstruction = focusDimension
+    ? `\nIMPORTANT: The user wants to provide feedback specifically about "${focusDimension}". Your question MUST be about ${focusDimension} — do NOT ask about a different topic.`
+    : "";
 
   const prompt = `You are generating one low-friction follow-up question for a hotel review flow.
 
@@ -90,7 +98,7 @@ Goal:
 - Base it on this hotel's existing guest comments.
 - Avoid repeating topics the current draft review already covers.
 - Make the question easy to answer by tap, short text, or voice.
-- Keep it natural and product-friendly.
+- Keep it natural and product-friendly.${focusInstruction}
 
 Hotel:\n${JSON.stringify(hotel, null, 2)}
 

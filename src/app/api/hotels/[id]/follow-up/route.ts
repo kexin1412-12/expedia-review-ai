@@ -7,8 +7,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const hotel = getHotelById(id);
   if (!hotel) return NextResponse.json({ error: "Hotel not found." }, { status: 404 });
 
-  const body = (await req.json()) as { draftReview?: string };
+  const body = (await req.json()) as { draftReview?: string; focusDimension?: string };
   const draftReview = body.draftReview?.trim() || "";
-  const followUp = await generateFollowUp(hotel, getReviewsForHotel(id), draftReview);
+  const focusDimension = body.focusDimension?.trim() || undefined;
+  const followUp = await generateFollowUp(hotel, getReviewsForHotel(id), draftReview, focusDimension);
   return NextResponse.json(followUp);
 }

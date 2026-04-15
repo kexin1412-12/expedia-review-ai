@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   ArrowLeft, MapPin, Star, Clock, Globe,
   ChevronDown, ChevronRight, ShieldCheck, PawPrint, Baby, AlertTriangle,
@@ -326,6 +326,13 @@ function PolicyCard({ icon, title, items }: { icon: React.ReactNode; title: stri
 export function HotelDetailClient({ hotel }: { hotel: HotelRecord }) {
   const [reviews, setReviews] = useState<ReviewRecord[]>([]);
   const [showIntelModal, setShowIntelModal] = useState(false);
+  const [prefillQuestion, setPrefillQuestion] = useState<{ question: string; dimension: string } | null>(null);
+  const compositionRef = useRef<HTMLElement>(null);
+
+  const handleHealthQuestionClick = useCallback((question: string, dimension: string) => {
+    setPrefillQuestion({ question, dimension });
+    compositionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, []);
 
   useEffect(() => {
     async function loadHotelContext() {
@@ -551,7 +558,7 @@ export function HotelDetailClient({ hotel }: { hotel: HotelRecord }) {
 
         {/* ═══════ Property Knowledge Health ═══════ */}
         <section className="mt-8">
-          <KnowledgeHealthPanel hotelId={hotel.id} />
+          <KnowledgeHealthPanel hotelId={hotel.id} onQuestionClick={handleHealthQuestionClick} />
         </section>
 
         {/* ═══════ Review Intelligence Panel ═══════ */}
@@ -560,11 +567,12 @@ export function HotelDetailClient({ hotel }: { hotel: HotelRecord }) {
         </section>
 
         {/* ═══════ Review Composition (最下面) ═══════ */}
-        <section className="mt-10 rounded-[22px] border border-slate-200 bg-white p-6 shadow-card">
+        <section ref={compositionRef} className="mt-10 rounded-[22px] border border-slate-200 bg-white p-6 shadow-card">
           <h2 className="text-xl font-bold text-slate-900 mb-4">Share Your Experience</h2>
           <ReviewCompositionSection
             hotel={hotel}
             existingReviews={reviews}
+            prefillQuestion={prefillQuestion}
             onReviewSubmit={async (review) => {
               // This callback will be called when user submits a review
               // You can handle the submission here (e.g., refresh reviews list)

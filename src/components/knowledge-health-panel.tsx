@@ -18,11 +18,11 @@ import type { KnowledgeHealthResponse, HealthStatus, TrendDirection, DimensionHe
 
 /* ── Status visual config ── */
 const statusConfig: Record<HealthStatus, { label: string; color: string; bg: string; border: string; dot: string; icon: typeof CheckCircle2 }> = {
-  strong_signal: { label: "Strong Signal", color: "text-emerald-700", bg: "bg-emerald-50",  border: "border-emerald-200", dot: "bg-emerald-500", icon: CheckCircle2 },
-  stable:        { label: "Stable",        color: "text-sky-700",     bg: "bg-sky-50",      border: "border-sky-200",     dot: "bg-sky-500",     icon: Activity },
-  fading:        { label: "Fading",        color: "text-amber-600",   bg: "bg-orange-50",   border: "border-orange-200",  dot: "bg-amber-400",   icon: Clock },
-  risk:          { label: "Risk",          color: "text-red-700",     bg: "bg-red-50",      border: "border-red-200",     dot: "bg-red-500",     icon: ShieldAlert },
-  unknown:       { label: "Unknown",       color: "text-slate-500",   bg: "bg-slate-50",    border: "border-slate-200",   dot: "bg-slate-400",   icon: HelpCircle },
+  strong_signal: { label: "Well Covered",     color: "text-emerald-700", bg: "bg-emerald-50",  border: "border-emerald-200", dot: "bg-emerald-500", icon: CheckCircle2 },
+  stable:        { label: "Stable",           color: "text-sky-700",     bg: "bg-sky-50",      border: "border-sky-200",     dot: "bg-sky-500",     icon: Activity },
+  fading:        { label: "Needs Refresh",    color: "text-amber-600",   bg: "bg-orange-50",   border: "border-orange-200",  dot: "bg-amber-400",   icon: Clock },
+  risk:          { label: "Stale",            color: "text-red-700",     bg: "bg-red-50",      border: "border-red-200",     dot: "bg-red-500",     icon: ShieldAlert },
+  unknown:       { label: "Uncertain",        color: "text-slate-500",   bg: "bg-slate-50",    border: "border-slate-200",   dot: "bg-slate-400",   icon: HelpCircle },
 };
 
 const trendIcons: Record<TrendDirection, typeof ArrowUp> = { up: ArrowUp, stable: ArrowRight, down: ArrowDown };
@@ -63,10 +63,13 @@ function ConfidenceBar({ value }: { value: number }) {
 }
 
 /* ── Dimension card ── */
-function DimensionCard({ dim }: { dim: DimensionHealth }) {
+function DimensionCard({ dim, onQuestionClick }: { dim: DimensionHealth; onQuestionClick?: (question: string, dimension: string) => void }) {
+  const isStatic = dim.volatility === "static";
   const cfg = statusConfig[dim.status];
   const StatusIcon = cfg.icon;
   const TrendIcon = trendIcons[dim.trend];
+  // For static topics, show a special sub-label
+  const statusLabel = isStatic && dim.status === "stable" ? "Low Change Risk" : cfg.label;
 
   return (
     <div className={`rounded-2xl border ${cfg.border} ${cfg.bg} p-4 transition hover:shadow-md`}>
@@ -74,16 +77,13 @@ function DimensionCard({ dim }: { dim: DimensionHealth }) {
         <h4 className="text-sm font-bold text-slate-800">{dim.label}</h4>
         <span className={`inline-flex items-center gap-1.5 rounded-full ${cfg.bg} px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${cfg.color}`}>
           <StatusIcon className="h-3 w-3" />
-          {cfg.label}
+          {statusLabel}
         </span>
       </div>
 
-      <p className="mt-2 text-xs leading-5 text-slate-600 line-clamp-2">{dim.summary}</p>
-
-      {/* Confidence */}
-      <div className="mt-2.5">
-        <ConfidenceBar value={dim.confidence} />
-      </div>
+      {isStatic && (
+        <p className="mt-1.5 text-[10px] text-slate-400 italic">Consistent over time · low time-sensitivity</p>
+      )}
 
       <div className="mt-2.5 flex items-center gap-3 text-xs text-slate-500">
         <span>{dim.totalMentions} total</span>
@@ -97,27 +97,36 @@ function DimensionCard({ dim }: { dim: DimensionHealth }) {
         </span>
       </div>
 
-      {dim.staleDays !== null && dim.staleDays > 30 && (
+      {dim.staleDays !== null && dim.staleDays > 30 && !isStatic && (
         <div className="mt-2 text-[10px] text-amber-600">
           ⏳ Last mention {dim.staleDays}d ago
         </div>
       )}
 
-      {dim.questionCandidates.length > 0 && (
-        <div className="mt-2.5 space-y-1">
-          {dim.questionCandidates.slice(0, 2).map((q, i) => (
-            <div key={i} className="rounded-lg bg-white/70 px-2.5 py-1.5 text-[11px] text-slate-600">
-              💬 {q}
-            </div>
-          ))}
-        </div>
-      )}
+      {(() => {
+        const questions = dim.questionCandidates.length > 0
+          ? dim.questionCandidates.slice(0, 1)
+          : [`How was the ${dim.label.toLowerCase()} during your stay?`];
+        return (
+          <div className="mt-2.5 space-y-1">
+            {questions.map((q, i) => (
+              <button
+                key={i}
+                onClick={() => onQuestionClick?.(q, dim.label)}
+                className="w-full text-left rounded-lg bg-white/70 px-2.5 py-1.5 text-[11px] text-slate-600 transition hover:bg-blue-50 hover:text-expediaBlue cursor-pointer"
+              >
+                💬 {q}
+              </button>
+            ))}
+          </div>
+        );
+      })()}
     </div>
   );
 }
 
 /* ── Main panel ── */
-export function KnowledgeHealthPanel({ hotelId }: { hotelId: string }) {
+export function KnowledgeHealthPanel({ hotelId, onQuestionClick }: { hotelId: string; onQuestionClick?: (question: string, dimension: string) => void }) {
   const [data, setData] = useState<KnowledgeHealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -177,8 +186,14 @@ export function KnowledgeHealthPanel({ hotelId }: { hotelId: string }) {
       {/* Dimension grid */}
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {data.dimensions.map((dim) => (
-          <DimensionCard key={dim.dimension} dim={dim} />
+          <DimensionCard key={dim.dimension} dim={dim} onQuestionClick={onQuestionClick} />
         ))}
+      </div>
+
+      {/* Volatility note */}
+      <div className="mt-4 rounded-xl bg-slate-50 px-4 py-2.5 text-[11px] leading-5 text-slate-500">
+        <span className="font-semibold text-slate-600">💡 Not all information decays at the same rate.</span>{" "}
+        Some topics (like location) are less time-sensitive and don&apos;t require frequent updates, while operational aspects (like breakfast or service) need recent confirmation.
       </div>
 
       {/* Suggested follow-up questions */}
