@@ -17,12 +17,12 @@ import {
 import type { KnowledgeHealthResponse, HealthStatus, TrendDirection, DimensionHealth } from "@/types";
 
 /* ── Status visual config ── */
-const statusConfig: Record<HealthStatus, { label: string; color: string; bg: string; border: string; icon: typeof CheckCircle2 }> = {
-  strong_signal: { label: "Strong Signal", color: "text-emerald-700", bg: "bg-emerald-50",  border: "border-emerald-200", icon: CheckCircle2 },
-  stable:        { label: "Stable",        color: "text-sky-700",     bg: "bg-sky-50",      border: "border-sky-200",     icon: Activity },
-  fading:        { label: "Fading",        color: "text-amber-700",   bg: "bg-amber-50",    border: "border-amber-200",   icon: Clock },
-  risk:          { label: "Risk",          color: "text-red-700",     bg: "bg-red-50",      border: "border-red-200",     icon: ShieldAlert },
-  unknown:       { label: "Unknown",       color: "text-slate-500",   bg: "bg-slate-50",    border: "border-slate-200",   icon: HelpCircle },
+const statusConfig: Record<HealthStatus, { label: string; color: string; bg: string; border: string; dot: string; icon: typeof CheckCircle2 }> = {
+  strong_signal: { label: "Strong Signal", color: "text-emerald-700", bg: "bg-emerald-50",  border: "border-emerald-200", dot: "bg-emerald-500", icon: CheckCircle2 },
+  stable:        { label: "Stable",        color: "text-sky-700",     bg: "bg-sky-50",      border: "border-sky-200",     dot: "bg-sky-500",     icon: Activity },
+  fading:        { label: "Fading",        color: "text-amber-600",   bg: "bg-orange-50",   border: "border-orange-200",  dot: "bg-amber-400",   icon: Clock },
+  risk:          { label: "Risk",          color: "text-red-700",     bg: "bg-red-50",      border: "border-red-200",     dot: "bg-red-500",     icon: ShieldAlert },
+  unknown:       { label: "Unknown",       color: "text-slate-500",   bg: "bg-slate-50",    border: "border-slate-200",   dot: "bg-slate-400",   icon: HelpCircle },
 };
 
 const trendIcons: Record<TrendDirection, typeof ArrowUp> = { up: ArrowUp, stable: ArrowRight, down: ArrowDown };
@@ -72,7 +72,7 @@ function DimensionCard({ dim }: { dim: DimensionHealth }) {
     <div className={`rounded-2xl border ${cfg.border} ${cfg.bg} p-4 transition hover:shadow-md`}>
       <div className="flex items-center justify-between">
         <h4 className="text-sm font-bold text-slate-800">{dim.label}</h4>
-        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${cfg.color} ${cfg.bg}`}>
+        <span className={`inline-flex items-center gap-1.5 rounded-full ${cfg.bg} px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${cfg.color}`}>
           <StatusIcon className="h-3 w-3" />
           {cfg.label}
         </span>

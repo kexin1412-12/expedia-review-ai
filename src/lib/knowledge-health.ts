@@ -83,8 +83,8 @@ function buildTimeline(
   keywords: string[],
   taggedIndices: Set<number>,
   negativeIndices: Set<number>,
+  now: Date,
 ): TimelineEntry[] {
-  const now = new Date();
   const bucketSize = Math.ceil(RECENT_DAYS / BUCKET_COUNT);
 
   return Array.from({ length: BUCKET_COUNT }).map((_, idx) => {
@@ -147,8 +147,8 @@ function analyzeDimension(
   dim: DiscoveredDimension,
   parsed: ParsedReview[],
   tags: ReviewDimensionTag[],
+  now: Date,
 ): DimensionHealth {
-  const now = new Date();
 
   const taggedIndices = new Set<number>();
   const negativeIndices = new Set<number>();
@@ -195,7 +195,7 @@ function analyzeDimension(
   }).length;
   const negativeShare = relevantReviews.length > 0 ? negativeCount / relevantReviews.length : 0;
 
-  const timeline = buildTimeline(parsed, dim.keywords, taggedIndices, negativeIndices);
+    const timeline = buildTimeline(parsed, dim.keywords, taggedIndices, negativeIndices, now);
   const trend = inferTrend(timeline);
   const { status, refreshReason } = summarizeStatus({
     totalMentions: relevantReviews.length,
@@ -287,9 +287,17 @@ export async function computeKnowledgeHealth(
   // Step 2: Tag reviews to dimensions (AI)
   const reviewTags = await tagReviewsDimensions(discoveredDims, reviews);
 
+  // Use the latest review date as "now" so stale-days are relative to the dataset
+  const allDates = parsed
+    .map((pr) => pr.date)
+    .filter((d): d is Date => d !== null);
+  const now = allDates.length > 0
+    ? new Date(Math.max(...allDates.map((d) => d.getTime())))
+    : new Date();
+
   // Step 3: Compute signals per dimension
   const dimensions = discoveredDims.map((dim) =>
-    analyzeDimension(dim, parsed, reviewTags),
+    analyzeDimension(dim, parsed, reviewTags, now),
   );
 
   const statusWeights: Record<HealthStatus, number> = {

@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { HotelRecord, ReviewRecord } from "@/types";
 import { SmartFollowupSidebar } from "./smart-followup-sidebar";
 import { FollowUpResponse } from "@/types";
-import { Sparkles, CheckCircle2 } from "lucide-react";
+import { Sparkles, CheckCircle2, Mic, MicOff } from "lucide-react";
 
 export interface ReviewCompositionSectionProps {
   hotel: HotelRecord;
@@ -31,6 +31,51 @@ export function ReviewCompositionSection({
     Map<string, string>
   >(new Map());
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isListening, setIsListening] = useState(false);
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  // Initialize Web Speech API for draft voice input
+  useEffect(() => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      setVoiceSupported(true);
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = "en-US";
+
+      recognition.onresult = (event: any) => {
+        let final = "";
+        for (let i = 0; i < event.results.length; i++) {
+          const t = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            final += t;
+          }
+        }
+        if (final) {
+          setDraftReview((prev) => {
+            const sep = prev && !prev.endsWith(" ") ? " " : "";
+            return prev + sep + final;
+          });
+        }
+      };
+
+      recognition.onerror = () => {
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+    }
+    return () => {
+      if (recognitionRef.current) recognitionRef.current.abort();
+    };
+  }, []);
 
   // Fetch follow-up when draft changes (debounced)
   const fetchFollowUp = useCallback(
@@ -79,6 +124,26 @@ export function ReviewCompositionSection({
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, []);
+
+  const toggleVoice = useCallback(() => {
+    if (!recognitionRef.current) return;
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        setDraftReview((cur) => {
+          fetchFollowUp(cur);
+          return cur;
+        });
+      }, 400);
+    } else {
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+      } catch {}
+    }
+  }, [isListening, fetchFollowUp]);
 
   const handleFollowUpAnswer = useCallback(
     async (answer: string) => {
@@ -169,13 +234,37 @@ export function ReviewCompositionSection({
           <label className="block text-sm font-semibold text-slate-900 mb-1.5">
             Write your review
           </label>
-          <textarea
-            value={draftReview}
-            onChange={(e) => handleDraftChange(e.target.value)}
-            placeholder="Share your experience at this hotel..."
-            className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm text-slate-800 placeholder:text-slate-400 resize-none transition"
-            rows={7}
-          />
+          <div className="relative">
+            <textarea
+              value={draftReview}
+              onChange={(e) => handleDraftChange(e.target.value)}
+              placeholder={isListening ? "Listening — speak now…" : "Share your experience at this hotel..."}
+              className={`w-full px-4 py-3 pr-12 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm text-slate-800 placeholder:text-slate-400 resize-none transition ${
+                isListening ? "border-red-300 bg-red-50/30" : "border-slate-200"
+              }`}
+              rows={7}
+            />
+            {voiceSupported && (
+              <button
+                type="button"
+                onClick={toggleVoice}
+                className={`absolute right-3 bottom-3 p-2 rounded-full transition ${
+                  isListening
+                    ? "bg-red-500 text-white shadow-md animate-pulse"
+                    : "bg-slate-100 text-slate-400 hover:bg-blue-50 hover:text-blue-500"
+                }`}
+                title={isListening ? "Stop recording" : "Dictate your review"}
+              >
+                {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              </button>
+            )}
+          </div>
+          {isListening && (
+            <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+              Recording — speak your review, then tap the mic to stop
+            </p>
+          )}
         </div>
 
         {/* Submitted follow-up answers */}
