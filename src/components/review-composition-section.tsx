@@ -173,19 +173,48 @@ export function ReviewCompositionSection({
     async (answer: string) => {
       if (!followUpData?.topic) return;
 
+      const justAnsweredTopic = followUpData.topic;
+
       setSubmittedAnswers((prev) => {
         const newMap = new Map(prev);
-        newMap.set(followUpData.topic, answer);
+        newMap.set(justAnsweredTopic, answer);
         return newMap;
       });
 
-      // Fetch next follow-up question
+      // Fetch next follow-up question, explicitly including the just-answered topic
       setFollowUpData(null);
       if (draftReview.trim()) {
-        setTimeout(() => fetchFollowUp(draftReview), 300);
+        setIsLoadingFollowUp(true);
+        try {
+          const answeredTopics = [
+            ...Array.from(submittedAnswers.keys()),
+            justAnsweredTopic,
+          ];
+          const response = await fetch(`/api/hotels/${hotel.id}/follow-up`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ draftReview, answeredTopics }),
+          });
+
+          if (!response.ok) throw new Error("Failed to fetch follow-up");
+
+          const data = await response.json();
+          if (data.skip) {
+            setFollowUpData(null);
+            setTopicCovered(true);
+          } else {
+            setFollowUpData(data as FollowUpResponse);
+            setTopicCovered(false);
+          }
+        } catch (err) {
+          console.error("Failed to fetch next follow-up:", err);
+          setFollowUpData(null);
+        } finally {
+          setIsLoadingFollowUp(false);
+        }
       }
     },
-    [followUpData?.topic, draftReview, fetchFollowUp]
+    [followUpData?.topic, draftReview, hotel.id, submittedAnswers]
   );
 
   const handleSubmitReview = useCallback(async () => {

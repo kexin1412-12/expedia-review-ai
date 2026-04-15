@@ -16,18 +16,19 @@ const TOPIC_PRIORITY: string[] = [
 function selectBestTopic(draftReview: string, answeredTopics?: string[]): string | null {
   const answeredSet = new Set(answeredTopics || []);
 
-  // First pass: find topics NOT mentioned at all
-  for (const topic of TOPIC_PRIORITY) {
-    if (answeredSet.has(topic)) continue;
-    const depth = detectTopicMention(draftReview, topic);
-    if (depth === "not_mentioned") return topic;
-  }
-
-  // Second pass: find topics mentioned only shallowly (candidate for clarification)
+  // First pass: find topics mentioned SHALLOWLY — continue the user's conversation
+  // If the user is already talking about parking, dig deeper into parking first
   for (const topic of TOPIC_PRIORITY) {
     if (answeredSet.has(topic)) continue;
     const depth = detectTopicMention(draftReview, topic);
     if (depth === "shallow") return topic;
+  }
+
+  // Second pass: find topics NOT mentioned at all — introduce a new topic
+  for (const topic of TOPIC_PRIORITY) {
+    if (answeredSet.has(topic)) continue;
+    const depth = detectTopicMention(draftReview, topic);
+    if (depth === "not_mentioned") return topic;
   }
 
   // All topics either detailed or answered
@@ -138,13 +139,31 @@ export async function generateFollowUp(
     ? `You mentioned ${topicLabel} — one more detail would help future guests.`
     : `${topicLabel} hasn't been covered in your review yet.`;
 
+  const FALLBACK_QUICK_REPLIES: Record<string, string[]> = {
+    breakfast: ["Fresh and varied", "Basic but okay", "Not worth it", "Didn't have it"],
+    service: ["Friendly and attentive", "Professional but distant", "Slow response times", "Hard to find staff"],
+    cleanliness: ["Spotless everywhere", "Room clean, rest less so", "Needed attention", "Visible issues"],
+    wifi: ["Fast and stable", "Worked in lobby only", "Kept disconnecting", "Too slow to use"],
+    noise: ["Dead silent", "Some hallway noise", "Street noise all night", "Heard neighbors clearly"],
+    room_condition: ["Modern and fresh", "Comfortable but dated", "Needs renovation", "Minor wear and tear"],
+    pool: ["Clean and relaxing", "Crowded but okay", "Needs maintenance", "Was closed"],
+    parking: ["Easy and free", "Tight but manageable", "Expensive valet only", "Hard to find spots"],
+    location: ["Walking distance to everything", "Short drive needed", "Far from attractions", "Great for quiet retreat"],
+    amenities: ["Well-equipped gym", "Nice common areas", "Outdated facilities", "Nothing stood out"],
+    check_in: ["Fast and seamless", "Long wait in line", "Friendly but slow", "Had a booking issue"],
+    check_out: ["Quick and easy", "Had to wait", "Billing confusion", "Express checkout worked"],
+    safety: ["Well-lit and secure", "Security guards present", "Felt uneasy at night", "Poorly lit areas"],
+    family_friendly: ["Kids loved it", "Some kid options", "Not ideal for kids", "Adults-only vibe"],
+    pet_friendly: ["Pet area available", "Allowed but limited", "Extra fees applied", "Not accommodating"],
+  };
+
   const fallback: FollowUpResponse & { mentionDepth: MentionDepth; mode: FollowupMode } = {
     topic,
     question: fallbackQuestion,
     rationale: fallbackRationale,
     quickReplies: mode === "clarify_question"
       ? ["Limited options", "Quality issues", "It was fine", "Other"]
-      : ["Fresh and varied", "Basic but okay", "Not worth it", "Didn't have it"],
+      : (FALLBACK_QUICK_REPLIES[topic] || ["Positive experience", "Average experience", "Needs improvement", "Not applicable"]),
     mentionDepth,
     mode,
   };
@@ -625,7 +644,14 @@ export async function refineHealthWithAI(params: RefineHealthInput): Promise<Ref
     const parsed = JSON.parse(content) as RefineHealthResult;
     if (!Array.isArray(parsed.questions)) return fallbackResult;
     return parsed;
-  } catch {
-    return fallbackResult;
+  } catch (error: any) {
+    console.error("[refineHealthWithAI] Error:", error?.status, error?.message);
+    const isAuthError = error?.status === 401;
+    return {
+      questions: fallbackQuestions,
+      aiSummary: isAuthError
+        ? "AI refinement skipped: API key is invalid or expired. Please update OPENAI_API_KEY in .env.local."
+        : "AI refinement temporarily unavailable. Showing rule-based results.",
+    };
   }
 }
