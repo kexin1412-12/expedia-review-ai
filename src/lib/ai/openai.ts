@@ -21,3 +21,4 @@ export function getOpenAIClient(): OpenAI {
 
   return client;
 }
+

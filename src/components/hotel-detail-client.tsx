@@ -12,6 +12,7 @@ import { getHotelImage, getHotelGallery, hotelSubtitle, ratingLabel } from "@/li
 import { SiteHeader } from "@/components/site-header";
 import { KnowledgeHealthPanel } from "@/components/knowledge-health-panel";
 import { ReviewIntelligenceModal, ReviewIntelligencePanel } from "@/components/review-intelligence-modal";
+import { ReviewCompositionSection } from "@/components/review-composition-section";
 
 
 
@@ -556,6 +557,20 @@ export function HotelDetailClient({ hotel }: { hotel: HotelRecord }) {
         {/* ═══════ Review Intelligence Panel ═══════ */}
         <section className="mt-10">
           <ReviewIntelligencePanel hotel={hotel} reviews={reviews} />
+        </section>
+
+        {/* ═══════ Review Composition (最下面) ═══════ */}
+        <section className="mt-10 rounded-[22px] border border-slate-200 bg-white p-6 shadow-card">
+          <h2 className="text-xl font-bold text-slate-900 mb-4">Share Your Experience</h2>
+          <ReviewCompositionSection
+            hotel={hotel}
+            existingReviews={reviews}
+            onReviewSubmit={async (review) => {
+              // This callback will be called when user submits a review
+              // You can handle the submission here (e.g., refresh reviews list)
+              console.log("Review submitted:", review);
+            }}
+          />
         </section>
       </div>
       {/* ═══════ Review Intelligence Modal ═══════ */}

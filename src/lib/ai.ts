@@ -4,6 +4,7 @@ import { HotelRecord, ReviewRecord, FollowUpResponse, DimensionHealth, Suggested
 
 function getClient() {
   const apiKey = process.env.OPENAI_API_KEY;
+  console.log("[getClient] API Key exists:", !!apiKey, "Length:", apiKey?.length);
   if (!apiKey) return null;
   const proxy = process.env.HTTPS_PROXY || process.env.https_proxy;
   const opts: ConstructorParameters<typeof OpenAI>[0] = { apiKey };
@@ -46,12 +47,16 @@ Return valid JSON only in this format:
 }`;
 
   try {
-    const response = await client.responses.create({
-      model: "gpt-4.1-mini",
-      input: prompt,
+    const response = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 1,
     });
-    return JSON.parse(response.output_text);
-  } catch {
+    const content = response.choices[0]?.message?.content;
+    if (!content) throw new Error("No response content");
+    return JSON.parse(content);
+  } catch (error) {
+    console.error("[generateHotelSummary] API Error:", error);
     return {
       summary: `Guests often mention ${hotel.city ?? "the property"} for ${topAmenities(hotel) || "its convenient stay experience"}.`,
       highlights: [
@@ -102,11 +107,14 @@ Return valid JSON only in this format:
 }`;
 
   try {
-    const response = await client.responses.create({
-      model: "gpt-4.1-mini",
-      input: prompt,
+    const response = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 1,
     });
-    const parsed = JSON.parse(response.output_text);
+    const content = response.choices[0]?.message?.content;
+    if (!content) throw new Error("No response content");
+    const parsed = JSON.parse(content);
     if (!parsed.question || !Array.isArray(parsed.quickReplies)) return fallback;
     return parsed;
   } catch {
@@ -240,23 +248,26 @@ export async function discoverDimensions(
   );
 
   try {
-    const response = await client.responses.create({
-      model: "gpt-4.1-mini",
-      input: [
+    const response = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
         { role: "system", content: DISCOVER_SYSTEM },
         { role: "user", content: prompt },
       ],
-      text: {
-        format: {
-          type: "json_schema",
+      response_format: {
+        type: "json_schema",
+        json_schema: {
           name: "discovered_dimensions",
           strict: true,
           schema: DISCOVER_SCHEMA,
         },
       },
+      temperature: 1,
     });
 
-    const parsed = JSON.parse(response.output_text) as { dimensions: DiscoveredDimension[] };
+    const content = response.choices[0]?.message?.content;
+    if (!content) throw new Error("No response content");
+    const parsed = JSON.parse(content) as { dimensions: DiscoveredDimension[] };
     if (!Array.isArray(parsed.dimensions) || parsed.dimensions.length === 0) {
       return FALLBACK_DIMENSIONS;
     }
@@ -362,23 +373,26 @@ export async function tagReviewsDimensions(
     );
 
     try {
-      const response = await client.responses.create({
-        model: "gpt-4.1-mini",
-        input: [
+      const response = await client.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
           { role: "system", content: "You tag hotel reviews into dimensions with sentiment. Return only strict JSON." },
           { role: "user", content: tagPrompt(dimJson, batchJson) },
         ],
-        text: {
-          format: {
-            type: "json_schema",
+        response_format: {
+          type: "json_schema",
+          json_schema: {
             name: "review_dimension_tags",
             strict: true,
             schema: TAG_SCHEMA,
           },
         },
+        temperature: 1,
       });
 
-      const parsed = JSON.parse(response.output_text) as { reviewTags: ReviewDimensionTag[] };
+      const content = response.choices[0]?.message?.content;
+      if (!content) throw new Error("No response content");
+      const parsed = JSON.parse(content) as { reviewTags: ReviewDimensionTag[] };
       if (Array.isArray(parsed.reviewTags)) {
         allTags.push(...parsed.reviewTags);
       }
@@ -448,9 +462,9 @@ export async function refineHealthWithAI(params: RefineHealthInput): Promise<Ref
   };
 
   try {
-    const response = await client.responses.create({
-      model: "gpt-4.1-mini",
-      input: [
+    const response = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
         {
           role: "system",
           content: "You are an Expedia review intelligence assistant. Choose the best follow-up questions to refresh missing or outdated property knowledge. Return only structured JSON.",
@@ -460,9 +474,9 @@ export async function refineHealthWithAI(params: RefineHealthInput): Promise<Ref
           content: JSON.stringify(promptPayload),
         },
       ],
-      text: {
-        format: {
-          type: "json_schema",
+      response_format: {
+        type: "json_schema",
+        json_schema: {
           name: "review_gap_questions",
           strict: true,
           schema: {
@@ -490,9 +504,12 @@ export async function refineHealthWithAI(params: RefineHealthInput): Promise<Ref
           },
         },
       },
+      temperature: 1,
     });
 
-    const parsed = JSON.parse(response.output_text) as RefineHealthResult;
+    const content = response.choices[0]?.message?.content;
+    if (!content) throw new Error("No response content");
+    const parsed = JSON.parse(content) as RefineHealthResult;
     if (!Array.isArray(parsed.questions)) return fallbackResult;
     return parsed;
   } catch {
