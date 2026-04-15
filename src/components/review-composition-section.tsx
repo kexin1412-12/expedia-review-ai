@@ -25,6 +25,7 @@ export function ReviewCompositionSection({
 }: ReviewCompositionSectionProps) {
   const [draftReview, setDraftReview] = useState("");
   const [followUpData, setFollowUpData] = useState<FollowUpResponse | null>(null);
+  const [topicCovered, setTopicCovered] = useState(false);
   const [isLoadingFollowUp, setIsLoadingFollowUp] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -91,16 +92,24 @@ export function ReviewCompositionSection({
 
       setIsLoadingFollowUp(true);
       try {
+        const answeredTopics = Array.from(submittedAnswers.keys());
         const response = await fetch(`/api/hotels/${hotel.id}/follow-up`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ draftReview: review, focusDimension }),
+          body: JSON.stringify({ draftReview: review, focusDimension, answeredTopics }),
         });
 
         if (!response.ok) throw new Error("Failed to fetch follow-up");
 
-        const data: FollowUpResponse = await response.json();
-        setFollowUpData(data);
+        const data = await response.json();
+        // AI determined topic already covered — show "covered" state
+        if (data.skip) {
+          setFollowUpData(null);
+          setTopicCovered(true);
+        } else {
+          setFollowUpData(data as FollowUpResponse);
+          setTopicCovered(false);
+        }
         setSubmitError(null);
       } catch (err) {
         console.error("Failed to fetch follow-up:", err);
@@ -109,7 +118,7 @@ export function ReviewCompositionSection({
         setIsLoadingFollowUp(false);
       }
     },
-    [hotel.id]
+    [hotel.id, submittedAnswers]
   );
 
   const handleDraftChange = useCallback(
@@ -327,13 +336,23 @@ export function ReviewCompositionSection({
       {/* ── Right: AI-guided follow-up ── */}
       <div className="lg:col-span-2">
         <div className="sticky top-6">
-          {showFollowUp ? (
+          {showFollowUp && !topicCovered ? (
             <SmartFollowupSidebar
               followUpData={followUpData}
               hotelLanguages={hotel.amenityCategories?.langsSpoken}
               isLoading={isLoadingFollowUp}
               onSubmitAnswer={handleFollowUpAnswer}
             />
+          ) : topicCovered ? (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-5 text-center">
+              <CheckCircle2 className="h-7 w-7 text-emerald-500 mx-auto mb-2" />
+              <p className="text-sm font-medium text-emerald-800">
+                Your review already covers this topic well
+              </p>
+              <p className="text-xs text-emerald-600 mt-1">
+                Keep writing — a new follow-up will appear if more detail would help
+              </p>
+            </div>
           ) : (
             <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 p-6 text-center">
               <Sparkles className="h-8 w-8 text-slate-300 mx-auto mb-3" />

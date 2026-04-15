@@ -1,6 +1,9 @@
 import OpenAI from "openai";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { HotelRecord, ReviewRecord, FollowUpResponse, DimensionHealth, SuggestedQuestion, DiscoveredDimension, ReviewDimensionTag } from "@/types";
+import { detectTopicMention, MentionDepth } from "./followupGuards";
+import { decideFollowupMode, FollowupMode } from "./followupMode";
+import { postCheckFollowup } from "./followupPostCheck";
 
 function getClient() {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -68,19 +71,40 @@ Return valid JSON only in this format:
   }
 }
 
-export async function generateFollowUp(hotel: HotelRecord, reviews: ReviewRecord[], draftReview: string, focusDimension?: string) {
+export async function generateFollowUp(
+  hotel: HotelRecord,
+  reviews: ReviewRecord[],
+  draftReview: string,
+  focusDimension?: string,
+  answeredTopics?: string[],
+): Promise<(FollowUpResponse & { mentionDepth: MentionDepth; mode: FollowupMode }) | null> {
+  const topic = focusDimension || "breakfast";
+
+  // ── Layer 1: Local guard — detect mention depth ──
+  const mentionDepth = detectTopicMention(draftReview, topic);
+  const mode = decideFollowupMode(mentionDepth);
+
+  // Immediate short-circuit: detailed → no follow-up, skip LLM entirely
+  if (mode === "none") {
+    return null;
+  }
+
   const client = getClient();
   const sampleReviews = reviews.slice(0, 18).map((review) => review.text).filter(Boolean);
 
-  const fallback = {
-    topic: focusDimension || "breakfast",
-    question: focusDimension
-      ? `How was the ${focusDimension.toLowerCase()} during your stay?`
-      : "Did you try the breakfast during your stay?",
-    rationale: focusDimension
-      ? `${focusDimension} feedback helps future guests make informed decisions.`
-      : "Breakfast is useful for future guests and is not yet covered in your review.",
-    quickReplies: ["Great", "Okay", "Poor", "Not sure"],
+  const fallbackQuestion = mode === "clarify_question"
+    ? `What specifically about the ${topic.replace(/_/g, " ")} stood out to you?`
+    : `Did you try the ${topic.replace(/_/g, " ")} during your stay?`;
+
+  const fallback: FollowUpResponse & { mentionDepth: MentionDepth; mode: FollowupMode } = {
+    topic,
+    question: fallbackQuestion,
+    rationale: `${topic} feedback helps future guests make informed decisions.`,
+    quickReplies: mode === "clarify_question"
+      ? ["Limited options", "Quality issues", "It was fine", "Other"]
+      : ["Great", "Okay", "Poor", "Not sure"],
+    mentionDepth,
+    mode,
   };
 
   if (!client || sampleReviews.length === 0) {
@@ -88,43 +112,81 @@ export async function generateFollowUp(hotel: HotelRecord, reviews: ReviewRecord
   }
 
   const focusInstruction = focusDimension
-    ? `\nIMPORTANT: The user wants to provide feedback specifically about "${focusDimension}". Your question MUST be about ${focusDimension} — do NOT ask about a different topic.`
+    ? `\nIMPORTANT: The question MUST be about "${focusDimension}" — do NOT ask about a different topic.`
     : "";
 
-  const prompt = `You are generating one low-friction follow-up question for a hotel review flow.
+  const answeredInstruction = answeredTopics && answeredTopics.length > 0
+    ? `\nThe user has ALREADY answered follow-ups about these topics — do NOT re-ask them: ${answeredTopics.join(", ")}.`
+    : "";
 
-Goal:
-- Ask exactly one short follow-up question.
-- Base it on this hotel's existing guest comments.
-- Avoid repeating topics the current draft review already covers.
-- Make the question easy to answer by tap, short text, or voice.
-- Keep it natural and product-friendly.${focusInstruction}
+  // ── Layer 2: LLM prompt — constrained by mode ──
+  const prompt = `You are generating one smart follow-up question for a hotel review assistant.
+Your job is to avoid redundant questions and only ask what is still useful.
 
-Hotel:\n${JSON.stringify(hotel, null, 2)}
+INPUTS
+- Candidate topic: ${topic}
+- User draft review: ${draftReview}
+- Mention depth for this topic: ${mentionDepth}
+- Required mode: ${mode}
 
-Recent guest comments:\n${sampleReviews.join("\n---\n")}
+STRICT RULES
+1. If mode is "basic_question":
+   - The user has NOT mentioned this topic at all
+   - Ask a short first-time question about the topic
+   - Example for breakfast: "Did you try the breakfast during your stay?"
 
-Current draft review:\n${draftReview}
+2. If mode is "clarify_question":
+   - The user has already mentioned this topic with a shallow opinion
+   - You MUST NOT ask any yes/no confirmation question
+   - You MUST NOT ask:
+     - "Did you try X?"
+     - "Did you use X?"
+     - "How was X?" if the user already gave an opinion
+   - Ask for one specific detail or clarification instead
+   - Example: User wrote "breakfast is not good" → ask "What specifically was not good about the breakfast?"
+   - Example: User wrote "wifi is bad" → ask "What issues did you experience with the Wi-Fi?"
 
-Return valid JSON only in this format:
+3. If the user already expressed an opinion, assume they experienced the topic
+
+4. Keep the question under 14 words, natural, conversational, and specific
+
+5. Generate quickReplies that are SPECIFIC to the question context — NOT generic scales like "Great/Okay/Poor".
+   Example for clarifying breakfast: ["Limited options", "Food was cold", "Too expensive", "Long wait time"]
+   Example for staff question: ["Yes, very helpful", "Friendly but slow", "Don't remember", "Staff was unhelpful"]${focusInstruction}${answeredInstruction}
+
+Hotel: ${hotel.name} (${hotel.city || ""})
+
+Recent guest comments:\n${sampleReviews.slice(0, 10).join("\n---\n")}
+
+Return valid JSON only:
 {
-  "topic": "one short topic label",
-  "question": "single short question",
-  "rationale": "one sentence rationale",
-  "quickReplies": ["option 1", "option 2", "option 3", "option 4"]
+  "topic": "short topic label",
+  "question": "single follow-up question",
+  "rationale": "one sentence why this helps future guests",
+  "quickReplies": ["specific reply 1", "specific reply 2", "specific reply 3", "specific reply 4"]
 }`;
 
   try {
     const response = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: prompt }],
-      temperature: 1,
+      temperature: 0.7,
     });
     const content = response.choices[0]?.message?.content;
     if (!content) throw new Error("No response content");
     const parsed = JSON.parse(content);
     if (!parsed.question || !Array.isArray(parsed.quickReplies)) return fallback;
-    return parsed;
+
+    // ── Layer 3: Post-check — catch redundant yes/no that LLM still generated ──
+    const checkedQuestion = postCheckFollowup(parsed.question, topic, mentionDepth);
+    if (!checkedQuestion) return null;
+
+    return {
+      ...parsed,
+      question: checkedQuestion,
+      mentionDepth,
+      mode,
+    };
   } catch {
     return fallback;
   }
