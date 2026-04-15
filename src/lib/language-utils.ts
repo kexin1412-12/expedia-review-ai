@@ -66,7 +66,7 @@ export function isSpeechRecognitionSupported(): boolean {
 /**
  * Get the SpeechRecognition constructor
  */
-export function getSpeechRecognitionConstructor(): typeof SpeechRecognition | null {
+export function getSpeechRecognitionConstructor(): any {
   if (typeof window === "undefined") return null;
   return (
     (window as any).SpeechRecognition ||
