@@ -128,27 +128,32 @@ function getTopicIcon(topic: string): React.ReactNode {
    ═══════════════════════════════════════════ */
 
 /** Horizontal score bar for sidebar dimensions */
-function DimensionRow({ name, score, count, trend }: {
+function DimensionRow({ name, score, count, trend, isActive, onClick }: {
   name: string; score: number; count: number; trend?: TrendDirection;
+  isActive?: boolean; onClick?: () => void;
 }) {
   const pct = (score / 5) * 100;
   const TIcon = trend ? TREND_ICON[trend] : null;
   const tColor = trend ? TREND_COLOR[trend] : "";
   return (
-    <div className="group flex items-center gap-4 py-2.5">
-      <div className="w-[130px] shrink-0 text-sm text-slate-600">{name}</div>
-      <div className="flex flex-1 items-center gap-3">
+    <div
+      onClick={onClick}
+      className={`group flex items-center gap-4 py-2.5 rounded-lg px-2 -mx-2 transition cursor-pointer ${
+        isActive
+          ? "bg-expediaBlue/10 ring-1 ring-expediaBlue/30"
+          : "hover:bg-slate-100/70"
+      }`}
+    >
+      <div className={`w-[110px] shrink-0 text-sm ${isActive ? "font-semibold text-expediaBlue" : "text-slate-600"}`}>{name}</div>
+      <div className="flex flex-1 items-center gap-2">
         <div className="h-2 flex-1 rounded-full bg-slate-100">
           <div
             className="h-full rounded-full bg-expediaBlue transition-all duration-500"
             style={{ width: `${pct}%` }}
           />
         </div>
-        <span className="w-8 text-right text-sm font-bold text-slate-800">{score}</span>
-      </div>
-      <div className="flex w-16 items-center gap-1.5 text-xs text-slate-400">
-        {count > 0 && <span>({count})</span>}
-        {TIcon && <TIcon className={`h-3 w-3 ${tColor}`} />}
+        <span className="w-10 shrink-0 text-right text-sm font-bold text-slate-800">{score}<span className="text-xs font-medium text-slate-400">/5</span></span>
+        {TIcon && <TIcon className={`h-3 w-3 shrink-0 ${tColor}`} />}
       </div>
     </div>
   );
@@ -375,10 +380,11 @@ export function ReviewIntelligenceModal({ hotel, reviews, onClose }: {
   const [health, setHealth] = useState<KnowledgeHealthResponse | null>(null);
   const [healthLoading, setHealthLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [selectedDimension, setSelectedDimension] = useState<string | null>(null);
   const PAGE_SIZE = 10;
 
-  // Reset page when search/sort changes
-  useEffect(() => { setPage(1); }, [search, sort]);
+  // Reset page when search/sort/dimension filter changes
+  useEffect(() => { setPage(1); }, [search, sort, selectedDimension]);
 
   // Load knowledge health data
   useEffect(() => {
@@ -452,6 +458,13 @@ export function ReviewIntelligenceModal({ hotel, reviews, onClose }: {
   // Filtered + sorted reviews
   const filteredReviews = useMemo(() => {
     let result = [...reviews];
+    // Filter by selected dimension
+    if (selectedDimension) {
+      result = result.filter((r) => {
+        const ratings = parseRatings(r.ratingRaw);
+        return ratings[selectedDimension] != null && ratings[selectedDimension] > 0;
+      });
+    }
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(
@@ -476,7 +489,7 @@ export function ReviewIntelligenceModal({ hotel, reviews, onClose }: {
       }
     }
     return result;
-  }, [reviews, search, sort]);
+  }, [reviews, search, sort, selectedDimension]);
 
   // ESC to close
   useEffect(() => {
@@ -553,6 +566,8 @@ export function ReviewIntelligenceModal({ hotel, reviews, onClose }: {
                     score={d.score}
                     count={d.count}
                     trend={d.trend}
+                    isActive={selectedDimension === d.key}
+                    onClick={() => setSelectedDimension(selectedDimension === d.key ? null : d.key)}
                   />
                 ))}
               </div>
@@ -614,6 +629,15 @@ export function ReviewIntelligenceModal({ hotel, reviews, onClose }: {
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
                   {filteredReviews.length}
                 </span>
+                {selectedDimension && (
+                  <button
+                    onClick={() => setSelectedDimension(null)}
+                    className="flex items-center gap-1.5 rounded-full bg-expediaBlue/10 px-3 py-1 text-xs font-semibold text-expediaBlue transition hover:bg-expediaBlue/20"
+                  >
+                    {RATING_LABELS[selectedDimension] ?? selectedDimension}
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
               </div>
               <div className="flex items-center gap-3">
                 {/* Search */}
@@ -708,10 +732,11 @@ export function ReviewIntelligencePanel({ hotel, reviews }: {
   const [health, setHealth] = useState<KnowledgeHealthResponse | null>(null);
   const [healthLoading, setHealthLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [selectedDimension, setSelectedDimension] = useState<string | null>(null);
   const PAGE_SIZE = 10;
 
-  // Reset page when search/sort changes
-  useEffect(() => { setPage(1); }, [search, sort]);
+  // Reset page when search/sort/dimension filter changes
+  useEffect(() => { setPage(1); }, [search, sort, selectedDimension]);
 
   useEffect(() => {
     let cancelled = false;
@@ -767,6 +792,13 @@ export function ReviewIntelligencePanel({ hotel, reviews }: {
 
   const filteredReviews = useMemo(() => {
     let result = [...reviews];
+    // Filter by selected dimension
+    if (selectedDimension) {
+      result = result.filter((r) => {
+        const ratings = parseRatings(r.ratingRaw);
+        return ratings[selectedDimension] != null && ratings[selectedDimension] > 0;
+      });
+    }
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter((r) => (r.title ?? "").toLowerCase().includes(q) || r.text.toLowerCase().includes(q));
@@ -777,7 +809,7 @@ export function ReviewIntelligencePanel({ hotel, reviews }: {
       case "lowest": { const sc = (r: ReviewRecord) => parseRatings(r.ratingRaw).overall ?? 0; result.sort((a, b) => sc(a) - sc(b)); break; }
     }
     return result;
-  }, [reviews, search, sort]);
+  }, [reviews, search, sort, selectedDimension]);
 
   const sortLabels: Record<SortOption, string> = {
     relevant: "Most relevant",
@@ -836,7 +868,7 @@ export function ReviewIntelligencePanel({ hotel, reviews }: {
             <h3 className="text-sm font-bold text-slate-800">Review Dimensions</h3>
             <div className="mt-3 divide-y divide-slate-100">
               {coreDimensions.map((d) => (
-                <DimensionRow key={d.key} name={d.label} score={d.score} count={d.count} trend={d.trend} />
+                <DimensionRow key={d.key} name={d.label} score={d.score} count={d.count} trend={d.trend} isActive={selectedDimension === d.key} onClick={() => setSelectedDimension(selectedDimension === d.key ? null : d.key)} />
               ))}
             </div>
           </div>
@@ -869,6 +901,15 @@ export function ReviewIntelligencePanel({ hotel, reviews }: {
             <div className="flex items-center gap-3">
               <h3 className="text-lg font-bold text-slate-800">All Reviews</h3>
               <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">{filteredReviews.length}</span>
+              {selectedDimension && (
+                <button
+                  onClick={() => setSelectedDimension(null)}
+                  className="flex items-center gap-1.5 rounded-full bg-expediaBlue/10 px-3 py-1 text-xs font-semibold text-expediaBlue transition hover:bg-expediaBlue/20"
+                >
+                  {RATING_LABELS[selectedDimension] ?? selectedDimension}
+                  <X className="h-3 w-3" />
+                </button>
+              )}
             </div>
             <div className="flex items-center gap-3">
               <div className="relative">
